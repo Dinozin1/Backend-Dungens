@@ -4,5 +4,11 @@
     "score": 150,
     "rooms": 2,
     "won": false
+  },
+  {
+    "name": "coco",
+    "score": 748,
+    "rooms": 9,
+    "won": false
   }
 ]
