@@ -1,11 +1,13 @@
 """
-ui.py - Interface em modo texto (consola).
+ui.py - Interface em modo texto (consola), sem bibliotecas externas.
 
 Toda a comunicação com o jogador (print/input) vive aqui. A lógica do jogo
 só chama estes métodos, por isso mais tarde basta escrever uma classe com
-os mesmos métodos em pygame para ter a versão 2D.
+os mesmos métodos em pygame para ter a versão 2D. A versão colorida
+(ui_rich.py) herda desta classe e só redefine a parte visual.
 """
 import config
+from modes import MODES
 
 
 class QuitGame(Exception):
@@ -36,35 +38,48 @@ class TextUI:
             print("  O nome não pode estar vazio.")
 
     # ---------- menus ----------
-    def main_menu(self):
+    def main_menu(self, has_save=False):
+        """Devolve a chave do modo escolhido, ou 'continue', 'hall', 'help', 'quit'."""
         print("\n" + "=" * 44)
         print("        BACKEND DUNGEONS")
         print("  Limpa o sistema infetado, sala a sala!")
         print("=" * 44)
-        print(" 1) Jogar\n 2) Recordes\n 3) Como jogar\n 4) Sair")
-        return self._ask("> ", ["1", "2", "3", "4"])
+        opcoes = [(m.key, f"Jogar - {m.label}") for m in MODES.values()]
+        if has_save:
+            opcoes.append(("continue", "Continuar a run guardada"))
+        opcoes += [("hall", "Recordes"), ("help", "Como jogar"), ("quit", "Sair")]
+        for i, (_, texto) in enumerate(opcoes, 1):
+            print(f" {i}) {texto}")
+        escolha = self._ask("> ", [str(i) for i in range(1, len(opcoes) + 1)])
+        return opcoes[int(escolha) - 1][0]
 
     def show_help(self):
         print(f"""
 COMO JOGAR
-- Percorres {config.TOTAL_ROOMS} salas; na última está o boss.
-- Cada turno: compras 1 carta e depois jogas as que quiseres.
+- Percorres 10 salas (modo normal) ou 5 (modo rápido); na última está o boss.
+- Cada turno: compras 1 carta e depois jogas as que quiseres. Podes comprar:
+  básica de ataque, básica de defesa, ESPECIAL aleatória (aposta!) ou do teu BARALHO.
 - A ENERGIA não se perde no fim do turno: podes poupar para jogadas fortes
   (ganhas +{config.ENERGY_PER_TURN} por turno, máximo {config.MAX_ENERGY}).
 - O BLOQUEIO e o PARRY desaparecem no início do teu turno.
-- Compra: carta básica (ataque ou defesa) ou uma carta ESPECIAL aleatória.
 - Mão máxima: {config.HAND_LIMIT} cartas. Depois de cada combate escolhes 1 carta entre 3.
-- O boss esconde as ações, mas segue um padrão. Observa o histórico!""")
+- RELÍQUIAS: em certas salas escolhes 1 de 2; mudam as regras até ao fim da run.
+- Depois do turno {config.ENRAGE_TURN} os inimigos enfurecem-se (+1 de dano por turno).
+- O boss esconde as ações, mas segue um padrão. Observa o histórico!
+- A run é gravada depois de cada combate: podes sair e continuar mais tarde.""")
 
-    def show_hall(self, entries, warning=""):
+    def show_hall(self, tables, warning=""):
+        """tables = lista de (título, [ScoreEntry...]), uma tabela por modo."""
         print("\n--- RECORDES ---")
         if warning:
             print(f"(aviso: {warning})")
-        if not entries:
-            print("Ainda não há recordes. Sê o primeiro!")
-        for i, e in enumerate(entries, 1):
-            estado = "VITÓRIA" if e.won else f"sala {e.rooms}"
-            print(f"{i:>2}. {e.name:<12} {e.score:>5} pontos  ({estado})")
+        for titulo, entradas in tables:
+            print(f"\n{titulo}")
+            if not entradas:
+                print("  Ainda não há recordes.")
+            for i, e in enumerate(entradas, 1):
+                estado = "VITÓRIA" if e.won else f"sala {e.rooms}"
+                print(f" {i:>2}. {e.name:<12} {e.score:>5} pontos  ({estado})")
 
     # ---------- combate ----------
     @staticmethod
@@ -85,14 +100,20 @@ COMO JOGAR
         print(f"  Energia: {player.energy}/{config.MAX_ENERGY}   "
               f"Baralho: {player.deck.draw_pile_size}  "
               f"Descarte: {player.deck.discard_size}")
+        if player.relics:
+            print("  Relíquias: " + ", ".join(r.name for r in player.relics))
 
-    def choose_purchase(self):
+    def choose_purchase(self, can_draw_deck):
         print("\nCompra do turno (escolhe 1):")
         print(' 1) Carta básica de ATAQUE   - Print("Hit")')
         print(" 2) Carta básica de DEFESA   - If/Else")
         print(" 3) Carta ESPECIAL aleatória (aposta: pode ser ótima ou inútil)")
-        return {"1": "attack", "2": "defense", "3": "special"}[
-            self._ask("> ", ["1", "2", "3"])]
+        validas = ["1", "2", "3"]
+        if can_draw_deck:
+            print(" 4) Carta do teu BARALHO     (o que construíste na run)")
+            validas.append("4")
+        return {"1": "attack", "2": "defense", "3": "special", "4": "deck"}[
+            self._ask("> ", validas)]
 
     def choose_card(self, player, hand):
         """Devolve o índice da carta a jogar, ou None para terminar o turno."""
@@ -121,6 +142,14 @@ COMO JOGAR
         validas = ["0"] + [str(i) for i in range(1, len(options) + 1)]
         escolha = int(self._ask("> ", validas))
         return None if escolha == 0 else options[escolha - 1]
+
+    def choose_relic(self, options):
+        """Escolhe 1 relíquia (obrigatório). Devolve a relíquia."""
+        print("\nENCONTRASTE UMA RELÍQUIA! Escolhe uma (dura até ao fim da run):")
+        for i, relic in enumerate(options, 1):
+            print(f" {i}) {relic}")
+        validas = [str(i) for i in range(1, len(options) + 1)]
+        return options[int(self._ask("> ", validas)) - 1]
 
     def message(self, text):
         print(text)

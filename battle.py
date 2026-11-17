@@ -3,7 +3,7 @@ battle.py - Um combate (o "ciclo pequeno" da secção 3.2 do relatório).
 
 A Battle NÃO usa print() nem input(): fala com um objeto "ui" (a interface).
 Assim a lógica fica separada da interface e podemos trocar texto por 2D
-sem reescrever o combate (e testar com um bot, ver test_bot.py).
+sem reescrever o combate (e testar com bots, ver simulate.py).
 """
 import config
 from cards import BASIC_ATTACK, BASIC_DEFENSE, make_card, random_special
@@ -23,7 +23,7 @@ class Battle:
     def run(self):
         """Corre o combate todo. Devolve True se o jogador ganhou."""
         self._player.start_combat()
-        self._ui.message(f"\n>>> Sala {self._enemy.room}/{config.TOTAL_ROOMS}: "
+        self._ui.message(f"\n>>> Sala {self._enemy.room}/{self._enemy.total_rooms}: "
                          f"aparece {self._enemy.name}!")
         while True:
             self._turns += 1
@@ -43,15 +43,30 @@ class Battle:
 
     # ---- passos do turno ----
     def _buy_card(self):
-        """Compra de 1 carta: básica à escolha ou especial aleatória (4.3)."""
-        escolha = self._ui.choose_purchase()
-        if escolha == "attack":
-            carta = make_card(BASIC_ATTACK)
-        elif escolha == "defense":
-            carta = make_card(BASIC_DEFENSE)
-        else:
-            carta = random_special()
-        self._player.deck.add_to_hand(carta)
+        """
+        Compra de 1 carta (secção 4.3), com 4 opções: básica de ataque, básica
+        de defesa, especial aleatória, ou uma carta do teu BARALHO (assim as
+        recompensas que escolheste durante a run fazem mesmo diferença).
+        """
+        deck = self._player.deck
+        while True:
+            pode_baralho = deck.available_to_draw > 0
+            escolha = self._ui.choose_purchase(pode_baralho)
+            if escolha == "deck":
+                if not pode_baralho:              # validação: baralho esgotado
+                    self._ui.message("Já não tens cartas no baralho.")
+                    continue
+                carta = deck.draw(1)[0]           # draw() já a põe na mão
+            elif escolha == "attack":
+                carta = make_card(BASIC_ATTACK)
+                deck.add_to_hand(carta)
+            elif escolha == "defense":
+                carta = make_card(BASIC_DEFENSE)
+                deck.add_to_hand(carta)
+            else:
+                carta = random_special()
+                deck.add_to_hand(carta)
+            break
         self._ui.message(f"Compraste: {carta}")
         self._enforce_hand_limit()
 
@@ -74,6 +89,7 @@ class Battle:
             self._player.deck.play_from_hand(index)
             # Polimorfismo: não sabemos que tipo de carta é, só chamamos play().
             self._ui.message(f"-> {carta.name}: {carta.play(self._player, self._enemy)}")
+            self._player.notify_card_played(carta)   # as relíquias reagem
             self._enforce_hand_limit()
 
     def _enemy_turn(self):

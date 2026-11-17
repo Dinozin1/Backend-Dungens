@@ -138,7 +138,7 @@ class Character:
 
 
 class Player(Character):
-    """O programador. Tem energia, um baralho e pode dar parry."""
+    """O programador. Tem energia, um baralho, relíquias e pode dar parry."""
 
     def __init__(self, name, deck):
         super().__init__(name, config.PLAYER_MAX_HP)
@@ -146,6 +146,7 @@ class Player(Character):
         self._energy = 0
         self._attack_bonus = 0   # bónus do "Debug Mode" para o próximo ataque
         self._parry = 0          # dano a devolver se o inimigo atacar neste turno
+        self._relics = []        # relíquias apanhadas durante a run
 
     @property
     def deck(self):
@@ -154,6 +155,32 @@ class Player(Character):
     @property
     def energy(self):
         return self._energy
+
+    @property
+    def parry(self):
+        return self._parry
+
+    @property
+    def attack_bonus(self):
+        return self._attack_bonus
+
+    @property
+    def relics(self):
+        return tuple(self._relics)
+
+    # ---- relíquias ----
+    def add_relic(self, relic):
+        self._relics.append(relic)
+
+    def notify_card_played(self, card):
+        """Avisa as relíquias de que foi jogada uma carta (ex.: Macro)."""
+        for relic in self._relics:
+            relic.on_card_played(self, card)
+
+    # ---- gravação ----
+    def restore_hp(self, hp):
+        """Usado ao carregar uma run gravada (entre 1 e a vida máxima)."""
+        self._hp = max(1, min(hp, self._max_hp))
 
     # ---- energia ----
     def can_afford(self, cost):
@@ -189,6 +216,8 @@ class Player(Character):
         self.clear_statuses()
         self._deck.start_combat()
         self._deck.draw(config.INITIAL_HAND)
+        for relic in self._relics:
+            relic.on_combat_start(self)
 
     def start_turn(self, first_turn):
         """O bloqueio e o parry do turno anterior desaparecem; ganha energia."""
@@ -196,12 +225,20 @@ class Player(Character):
         self._parry = 0
         if not first_turn:
             self.gain_energy(config.ENERGY_PER_TURN)
+        for relic in self._relics:
+            relic.on_turn_start(self)
 
     def heal_after_combat(self):
-        """Recupera uma parte da vida (10% da máxima) no fim do combate."""
-        return self.heal(int(self._max_hp * config.HEAL_AFTER_FIGHT))
+        """Recupera 10% da vida máxima (mais o que as relíquias derem)."""
+        extra = sum(r.heal_after_combat() for r in self._relics)
+        return self.heal(int(self._max_hp * config.HEAL_AFTER_FIGHT) + extra)
 
     # ---- redefinições (polimorfismo) ----
+    def outgoing_damage(self, base):
+        """As relíquias (ex.: Stack Trace) somam dano a cada golpe."""
+        bonus = sum(r.attack_bonus() for r in self._relics) if base > 0 else 0
+        return super().outgoing_damage(base + bonus)
+
     def receive_attack(self, amount, attacker):
         """Se há parry ativo, anula o ataque e devolve dano ao atacante."""
         if self._parry > 0:

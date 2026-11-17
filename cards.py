@@ -46,6 +46,11 @@ class AttackCard(Card):
         self._damage = damage
         self._hits = hits
 
+    @property
+    def total_damage(self):
+        """Dano total da carta (todos os golpes), útil para os bots."""
+        return self._damage * self._hits
+
     def play(self, player, enemy):
         bonus = player.consume_attack_bonus()   # Debug Mode só vale 1 ataque
         linhas = []
@@ -65,6 +70,10 @@ class DefenseCard(Card):
     def __init__(self, name, cost, block):
         super().__init__(name, cost, f"Ganha {block} de bloqueio")
         self._block = block
+
+    @property
+    def block_amount(self):
+        return self._block
 
     def play(self, player, enemy):
         player.gain_block(self._block)

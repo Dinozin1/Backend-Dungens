@@ -3,7 +3,8 @@ hall_of_fame.py - Recordes guardados em ficheiro JSON.
 
 R3: coleção de objetos (lista de ScoreEntry) + ficheiro gravado e lido.
 R4: o ficheiro pode faltar, estar corrompido ou ter entradas inválidas;
-nada disso rebenta o jogo.
+nada disso rebenta o jogo. Cada recorde guarda o MODO de jogo, para a
+tabela do modo rápido não se misturar com a do modo normal.
 """
 import json
 import os
@@ -15,11 +16,12 @@ DEFAULT_PATH = Path(__file__).parent / "scores.json"
 class ScoreEntry:
     """Uma linha da tabela de recordes."""
 
-    def __init__(self, name, score, rooms, won):
+    def __init__(self, name, score, rooms, won, mode="normal"):
         self._name = name
         self._score = score
         self._rooms = rooms
         self._won = won
+        self._mode = mode
 
     @property
     def name(self):
@@ -37,9 +39,13 @@ class ScoreEntry:
     def won(self):
         return self._won
 
+    @property
+    def mode(self):
+        return self._mode
+
     def to_dict(self):
-        return {"name": self._name, "score": self._score,
-                "rooms": self._rooms, "won": self._won}
+        return {"name": self._name, "score": self._score, "rooms": self._rooms,
+                "won": self._won, "mode": self._mode}
 
     @classmethod
     def from_dict(cls, data):
@@ -48,15 +54,18 @@ class ScoreEntry:
             raise ValueError("entrada não é um dicionário")
         name, score = data.get("name"), data.get("score")
         rooms, won = data.get("rooms"), data.get("won")
+        mode = data.get("mode", "normal")   # ficheiros antigos não têm modo
         if (not isinstance(name, str) or not isinstance(score, int)
-                or not isinstance(rooms, int) or not isinstance(won, bool)):
+                or not isinstance(rooms, int) or not isinstance(won, bool)
+                or not isinstance(mode, str)):
             raise ValueError("campos inválidos")
-        return cls(name, score, rooms, won)
+        return cls(name, score, rooms, won, mode)
 
 
 class HallOfFame:
     def __init__(self, path=DEFAULT_PATH):
-        self._path = Path(path)
+        # path=None => só em memória (usado nos testes e nas simulações)
+        self._path = Path(path) if path is not None else None
         self._entries = []
         self._warning = ""     # aviso para mostrar ao jogador, se algo correu mal
         self.load()
@@ -65,10 +74,16 @@ class HallOfFame:
     def warning(self):
         return self._warning
 
+    @property
+    def entries(self):
+        return tuple(self._entries)
+
     def load(self):
         """Lê o ficheiro. Se falhar, começa vazio (e guarda a razão no aviso)."""
         self._entries = []
         self._warning = ""
+        if self._path is None:
+            return
         try:
             texto = self._path.read_text(encoding="utf-8")
         except FileNotFoundError:
@@ -99,6 +114,8 @@ class HallOfFame:
 
     def save(self):
         """Grava os recordes. Devolve False se não conseguiu."""
+        if self._path is None:
+            return True
         try:
             dados = [e.to_dict() for e in self._entries]
             self._path.write_text(json.dumps(dados, indent=2, ensure_ascii=False),
@@ -110,6 +127,7 @@ class HallOfFame:
     def add(self, entry):
         self._entries.append(entry)
 
-    def top(self, n=10):
-        """As n melhores pontuações, da maior para a menor."""
-        return sorted(self._entries, key=lambda e: e.score, reverse=True)[:n]
+    def top(self, n=10, mode=None):
+        """As n melhores pontuações (opcionalmente só de um modo)."""
+        entradas = [e for e in self._entries if mode is None or e.mode == mode]
+        return sorted(entradas, key=lambda e: e.score, reverse=True)[:n]

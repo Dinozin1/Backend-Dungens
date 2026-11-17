@@ -31,6 +31,11 @@ class Deck:
     def discard_size(self):
         return len(self._discard)
 
+    @property
+    def available_to_draw(self):
+        """Cartas que ainda se podem comprar (pilha + descarte reciclável)."""
+        return len(self._draw_pile) + len(self._discard)
+
     def __len__(self):
         return len(self._cards)
 
