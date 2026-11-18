@@ -21,12 +21,14 @@ from game import Game
 from hall_of_fame import HallOfFame
 from modes import MODES
 from savegame import SaveGame
+from ui import RunUI
 
 
-class NaiveBot:
-    """Interface automática simples. Implementa os mesmos métodos que TextUI."""
+class NaiveBot(RunUI):
+    """Interface automática simples: implementa a RunUI (sem menus)."""
 
     def ask_name(self): return "Bot"
+    def confirm(self, question): return True
     def message(self, text): pass
     def show_state(self, player, enemy, turn): pass
 

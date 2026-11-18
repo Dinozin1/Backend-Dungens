@@ -4,41 +4,113 @@ enemies.py - Inimigos e as suas "intenções".
 R2: Enemy é uma classe abstrata com choose_action(turn). Cada subclasse
 (Bug, Virus, RaceCondition, MemoryLeak, Trojan, Boss) redefine-o com o seu
 próprio padrão. O Boss redefine ainda describe_intent(), act() e _start_hp().
+Intent também é uma classe abstrata: AttackIntent, DefendIntent, WeakenIntent,
+ExposeIntent e HealIntent redefinem describe() e execute().
 """
 import random
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 
 import config
 from characters import Character
 from modes import DEFAULT_MODE, get_mode
 
 
-@dataclass
-class Intent:
-    """O que o inimigo vai fazer no seu turno."""
-    kind: str        # "attack", "defend", "weaken", "expose" ou "heal"
-    value: int       # dano, bloqueio, turnos ou cura (conforme o tipo)
-    hits: int = 1    # nº de golpes (só para ataques)
+class Intent(ABC):
+    """
+    O que o inimigo vai fazer no seu turno (R2: cada tipo de intenção sabe
+    descrever-se e executar-se; o Enemy só chama describe() e execute()).
+    """
+    kind = ""        # "attack", "defend", "weaken", "expose" ou "heal"
+    SHORT = ""       # nome curto, usado no histórico do boss
 
+    def __init__(self, value, hits=1):
+        self._value = value      # dano, bloqueio, turnos ou cura (conforme o tipo)
+        self._hits = hits        # nº de golpes (só para ataques)
+
+    @property
+    def value(self):
+        return self._value
+
+    @property
+    def hits(self):
+        return self._hits
+
+    @abstractmethod
     def describe(self):
-        if self.kind == "attack":
-            dano = f"{self.value} de dano" + (f" x{self.hits}" if self.hits > 1 else "")
-            return f"vai ATACAR ({dano})"
-        if self.kind == "defend":
-            return f"vai DEFENDER (+{self.value} de bloqueio)"
-        if self.kind == "weaken":
-            return f"vai ENFRAQUECER-te ({self.value} turnos)"
-        if self.kind == "expose":
-            return f"vai EXPOR-te: ficas Vulnerável {self.value} turnos"
-        return f"vai CURAR-SE ({self.value} de vida)"
+        """Texto mostrado ao jogador (ex.: 'vai ATACAR (6 de dano)')."""
+
+    @abstractmethod
+    def execute(self, enemy, player):
+        """Executa a intenção e devolve a lista de mensagens do que aconteceu."""
 
     def short(self):
         """Versão curta, usada no histórico do boss."""
-        nomes = {"attack": "Ataque", "defend": "Defesa", "weaken": "Enfraquecer",
-                 "expose": "Expor", "heal": "Cura"}
-        extra = f"x{self.hits}" if self.hits > 1 else ""
-        return f"{nomes[self.kind]} {self.value}{extra}"
+        extra = f"x{self._hits}" if self._hits > 1 else ""
+        return f"{self.SHORT} {self._value}{extra}"
+
+
+class AttackIntent(Intent):
+    kind, SHORT = "attack", "Ataque"
+
+    def describe(self):
+        dano = f"{self._value} de dano" + (f" x{self._hits}" if self._hits > 1 else "")
+        return f"vai ATACAR ({dano})"
+
+    def execute(self, enemy, player):
+        mensagens = []
+        for _ in range(self._hits):
+            resultado = player.receive_attack(self._value, enemy)
+            mensagens.append(f"{enemy.name} ataca! {resultado}")
+            # parou o ataque quem morreu: o jogador, ou o inimigo (ex.: parry)
+            if not player.is_alive or not enemy.is_alive:
+                break
+        return mensagens
+
+
+class DefendIntent(Intent):
+    kind, SHORT = "defend", "Defesa"
+
+    def describe(self):
+        return f"vai DEFENDER (+{self._value} de bloqueio)"
+
+    def execute(self, enemy, player):
+        enemy.gain_block(self._value)
+        return [f"{enemy.name} ganha {self._value} de bloqueio."]
+
+
+class WeakenIntent(Intent):
+    kind, SHORT = "weaken", "Enfraquecer"
+
+    def describe(self):
+        return f"vai ENFRAQUECER-te ({self._value} turnos)"
+
+    def execute(self, enemy, player):
+        player.apply_status("weak", self._value)
+        return [f"{enemy.name} enfraquece-te: causas -25% de dano "
+                f"durante {self._value} turnos."]
+
+
+class ExposeIntent(Intent):
+    kind, SHORT = "expose", "Expor"
+
+    def describe(self):
+        return f"vai EXPOR-te: ficas Vulnerável {self._value} turnos"
+
+    def execute(self, enemy, player):
+        player.apply_status("vulnerable", self._value)
+        return [f"{enemy.name} expõe-te: recebes +50% de dano "
+                f"durante {self._value} turnos."]
+
+
+class HealIntent(Intent):
+    kind, SHORT = "heal", "Cura"
+
+    def describe(self):
+        return f"vai CURAR-SE ({self._value} de vida)"
+
+    def execute(self, enemy, player):
+        curado = enemy.heal(self._value)
+        return [f"{enemy.name} cura-se {curado} de vida."]
 
 
 class Enemy(Character, ABC):
@@ -49,6 +121,8 @@ class Enemy(Character, ABC):
     BASE_DAMAGE = 4
     DAMAGE_PER_ROOM = 0.5
     NAME = "Inimigo"
+    MIN_LEVEL = 0      # dificuldade (sala equivalente) a partir da qual pode aparecer
+    SPAWNS = True      # False: nunca é sorteado como inimigo normal (ex.: Boss)
 
     def __init__(self, room, mode=None):
         self._mode = mode or get_mode(DEFAULT_MODE)
@@ -89,8 +163,7 @@ class Enemy(Character, ABC):
 
     def _attack(self, multiplier=1.0, hits=1):
         """Cria uma intenção de ataque (já com a fraqueza aplicada)."""
-        return Intent("attack",
-                      self.outgoing_damage(int(self.damage * multiplier)), hits)
+        return AttackIntent(self.outgoing_damage(int(self.damage * multiplier)), hits)
 
     def plan(self, turn):
         """No início do turno do jogador, o inimigo decide o que vai fazer."""
@@ -102,29 +175,8 @@ class Enemy(Character, ABC):
         return f"{self.name} {self._intent.describe()}"
 
     def act(self, player):
-        """Executa a intenção e devolve as mensagens do que aconteceu."""
-        intent = self._intent
-        if intent.kind == "attack":
-            mensagens = []
-            for _ in range(intent.hits):
-                resultado = player.receive_attack(intent.value, self)
-                mensagens.append(f"{self.name} ataca! {resultado}")
-                if not player.is_alive:
-                    break
-            return mensagens
-        if intent.kind == "defend":
-            self.gain_block(intent.value)
-            return [f"{self.name} ganha {intent.value} de bloqueio."]
-        if intent.kind == "weaken":
-            player.apply_status("weak", intent.value)
-            return [f"{self.name} enfraquece-te: causas -25% de dano "
-                    f"durante {intent.value} turnos."]
-        if intent.kind == "expose":
-            player.apply_status("vulnerable", intent.value)
-            return [f"{self.name} expõe-te: recebes +50% de dano "
-                    f"durante {intent.value} turnos."]
-        curado = self.heal(intent.value)
-        return [f"{self.name} cura-se {curado} de vida."]
+        """Executa a intenção (polimorfismo: cada Intent sabe o que fazer)."""
+        return self._intent.execute(self, player)
 
 
 class Bug(Enemy):
@@ -142,17 +194,18 @@ class Virus(Enemy):
     def choose_action(self, turn):
         if turn % 2 == 1:
             return self._attack(1.3)
-        return Intent("weaken", 2)
+        return WeakenIntent(2)
 
 
 class RaceCondition(Enemy):
     """Dois golpes seguidos (o parry só anula um!); de 3 em 3 turnos defende."""
     NAME = "Race Condition"
     BASE_HP = 18
+    MIN_LEVEL = 2.5
 
     def choose_action(self, turn):
         if turn % 3 == 0:
-            return Intent("defend", self.damage + 2)
+            return DefendIntent(self.damage + 2)
         return self._attack(0.8, hits=2)
 
 
@@ -160,24 +213,26 @@ class MemoryLeak(Enemy):
     """Ciclo de 3 turnos: defende, ataca com força, cura-se."""
     NAME = "Memory Leak"
     BASE_HP = 24
+    MIN_LEVEL = 4
 
     def choose_action(self, turn):
         fase = turn % 3
         if fase == 1:
-            return Intent("defend", self.damage + 3)
+            return DefendIntent(self.damage + 3)
         if fase == 2:
             return self._attack(1.6)
-        return Intent("heal", 3 + int(self._level) // 2)
+        return HealIntent(3 + int(self._level) // 2)
 
 
 class Trojan(Enemy):
     """Primeiro expõe-te (Vulnerável) e depois bate forte, aproveitando isso."""
     NAME = "Trojan"
     BASE_HP = 22
+    MIN_LEVEL = 4
 
     def choose_action(self, turn):
         if turn % 2 == 1:
-            return Intent("expose", 2)
+            return ExposeIntent(2)
         return self._attack(1.4)
 
 
@@ -189,6 +244,7 @@ class Boss(Enemy):
     """
     NAME = "O Rootkit"
     BASE_DAMAGE = 7
+    SPAWNS = False
 
     def __init__(self, room, mode=None):
         super().__init__(room, mode)
@@ -207,7 +263,7 @@ class Boss(Enemy):
         if fase == 1:
             return self._attack()
         if fase == 2:
-            return Intent("weaken", 2)
+            return WeakenIntent(2)
         return self._attack(2.0)
 
     def describe_intent(self):
@@ -225,14 +281,14 @@ class Boss(Enemy):
 
 
 def spawn_enemy(room, mode=None):
-    """Escolhe o inimigo da sala: normais antes da última, boss na última."""
+    """
+    Escolhe o inimigo da sala: o Boss na última, e antes disso um inimigo normal
+    sorteado entre as subclasses de Enemy cujo MIN_LEVEL já foi atingido.
+    (Para criar um inimigo novo basta escrever a classe.)
+    """
     mode = mode or get_mode(DEFAULT_MODE)
     if room >= mode.rooms:
         return Boss(room, mode)
     nivel = mode.difficulty_room(room)
-    tipos = [Bug, Virus]
-    if nivel >= 2.5:
-        tipos.append(RaceCondition)
-    if nivel >= 4:
-        tipos += [MemoryLeak, Trojan]
+    tipos = [t for t in Enemy.__subclasses__() if t.SPAWNS and nivel >= t.MIN_LEVEL]
     return random.choice(tipos)(room, mode)

@@ -32,6 +32,11 @@ class Game:
             estado = self._save.load()
             escolha = self._ui.main_menu(has_save=estado is not None)
             if escolha in MODES:
+                if estado is not None:
+                    if not self._ui.confirm("Já tens uma run guardada. Começar uma nova "
+                                            "apaga-a. Continuar?"):
+                        continue
+                    self._save.delete()
                 self.play_new(MODES[escolha])
             elif escolha == "continue":
                 self.continue_run(estado)

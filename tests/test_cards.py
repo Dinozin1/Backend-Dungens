@@ -1,7 +1,7 @@
 """Testes das cartas e do deck (R2: polimorfismo; R3: coleção de objetos)."""
 import unittest
 
-from cards import (CARD_FACTORIES, SPECIALS, AttackCard, Card, make_card)
+from cards import CARD_FACTORIES, Card, make_card
 from characters import Player
 from deck import Deck
 from enemies import Bug
@@ -28,9 +28,9 @@ class TestCards(unittest.TestCase):
             p.start_combat()
             self.assertIsInstance(carta.play(p, e), str)   # polimorfismo
 
-    def test_specials_exist(self):
-        for nome in SPECIALS:
-            self.assertIn(nome, CARD_FACTORIES)
+    def test_card_names_match_catalog_keys(self):
+        for nome in CARD_FACTORIES:
+            self.assertEqual(make_card(nome).name, nome)
 
     def test_attack_hits_enemy(self):
         p, e = new_player(), Bug(1)
@@ -87,8 +87,8 @@ class TestDeck(unittest.TestCase):
     def test_reshuffle_discard_when_pile_empty(self):
         self.deck.start_combat()
         self.deck.draw(6)
-        self.deck.play_from_hand(0)
-        self.deck.play_from_hand(0)
+        self.deck.discard_from_hand(0)
+        self.deck.discard_from_hand(0)
         self.assertEqual(self.deck.available_to_draw, 2)
         self.assertEqual(len(self.deck.draw(1)), 1)
 
@@ -100,7 +100,7 @@ class TestDeck(unittest.TestCase):
     def test_play_moves_card_to_discard(self):
         self.deck.start_combat()
         self.deck.draw(2)
-        self.deck.play_from_hand(0)
+        self.deck.discard_from_hand(0)
         self.assertEqual((len(self.deck.hand), self.deck.discard_size), (1, 1))
 
     def test_add_card_grows_deck(self):

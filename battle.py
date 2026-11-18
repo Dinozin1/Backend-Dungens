@@ -33,17 +33,19 @@ class Battle:
             self._buy_card()                                         # 3. compra
             self._play_cards()                                       # 4. jogar
             if not self._enemy.is_alive:
-                self._ui.message(f"\n{self._enemy.name} foi derrotado!")
-                return True
+                return self._victory()
             self._end_player_turn()                                  # 5. fim do turno
             if self._player.is_alive:
                 self._enemy_turn()
-            if not self._enemy.is_alive:           # o veneno também pode matar
-                self._ui.message(f"\n{self._enemy.name} foi derrotado!")
-                return True
-            if not self._player.is_alive:
+            if not self._player.is_alive:          # se morrem os dois, perde o jogador
                 self._ui.message("\nA tua vida chegou a 0. Sistema comprometido...")
                 return False
+            if not self._enemy.is_alive:           # o veneno ou um parry também matam
+                return self._victory()
+
+    def _victory(self):
+        self._ui.message(f"\n{self._enemy.name} foi derrotado!")
+        return True
 
     # ---- passos do turno ----
     def _buy_card(self):
@@ -91,10 +93,12 @@ class Battle:
                                  f"(custa {carta.cost}, tens {self._player.energy}).")
                 continue
             self._player.spend_energy(carta.cost)
-            self._player.deck.play_from_hand(index)
+            self._player.deck.discard_from_hand(index)
             # Polimorfismo: não sabemos que tipo de carta é, só chamamos play().
             self._ui.message(f"-> {carta.name}: {carta.play(self._player, self._enemy)}")
             self._player.notify_card_played(carta)   # as relíquias reagem
+            # o estado do inimigo pode ter mudado (ex.: Fraqueza): atualiza a intenção
+            self._enemy.plan(self._turns)
             self._enforce_hand_limit()
 
     def _end_player_turn(self):

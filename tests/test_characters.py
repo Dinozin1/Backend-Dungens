@@ -55,6 +55,28 @@ class TestDamage(unittest.TestCase):
         self.assertEqual(p.hp, p.max_hp)
 
 
+class TestStatuses(unittest.TestCase):
+    def test_status_text_lists_active_statuses(self):
+        p = new_player()
+        self.assertEqual(p.status_text(), "-")
+        p.apply_status("vulnerable", 2)
+        p.apply_status("poison", 1)
+        self.assertEqual(p.status_text(), "Vulnerável(2), Envenenado(1)")
+
+    def test_apply_keeps_the_longest_duration(self):
+        p = new_player()
+        p.apply_status("weak", 3)
+        p.apply_status("weak", 1)
+        self.assertEqual(p.weak, 3)
+
+    def test_clear_statuses(self):
+        p = new_player()
+        p.apply_status("weak", 3)
+        p.apply_status("poison", 3)
+        p.clear_statuses()
+        self.assertEqual((p.weak, p.poison, p.vulnerable), (0, 0, 0))
+
+
 class TestParry(unittest.TestCase):
     def test_parry_cancels_and_reflects(self):
         p, bug = new_player(), Bug(1)

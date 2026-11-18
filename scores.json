@@ -21,15 +21,22 @@
     "mode": "normal"
   },
   {
-    "name": "Nigga",
-    "score": 792,
-    "rooms": 9,
-    "won": false,
-    "mode": "normal"
+    "name": "Dino",
+    "score": 1002,
+    "rooms": 5,
+    "won": true,
+    "mode": "curto"
   },
   {
     "name": "Dino",
-    "score": 1002,
+    "score": 990,
+    "rooms": 5,
+    "won": true,
+    "mode": "curto"
+  },
+  {
+    "name": "Dino",
+    "score": 976,
     "rooms": 5,
     "won": true,
     "mode": "curto"

@@ -9,6 +9,10 @@ from dataclasses import dataclass
 
 import config
 
+# Tabela única dos estados: chave interna -> nome mostrado ao jogador.
+# Para criar um estado novo, acrescenta-se aqui (e o efeito em take_damage/outgoing_damage).
+STATUS_NAMES = {"vulnerable": "Vulnerável", "weak": "Fraco", "poison": "Envenenado"}
+
 
 @dataclass
 class HitResult:
@@ -38,9 +42,7 @@ class Character:
         self._max_hp = max_hp
         self._hp = max_hp
         self._block = 0
-        self._vulnerable = 0   # turnos que faltam de "Vulnerável"
-        self._weak = 0         # turnos que faltam de "Fraqueza"
-        self._poison = 0       # turnos que faltam de "Veneno"
+        self._statuses = dict.fromkeys(STATUS_NAMES, 0)   # estado -> turnos que faltam
 
     # ---- leitura (propriedades só de leitura) ----
     @property
@@ -61,15 +63,15 @@ class Character:
 
     @property
     def vulnerable(self):
-        return self._vulnerable
+        return self._statuses["vulnerable"]
 
     @property
     def weak(self):
-        return self._weak
+        return self._statuses["weak"]
 
     @property
     def poison(self):
-        return self._poison
+        return self._statuses["poison"]
 
     @property
     def is_alive(self):
@@ -89,24 +91,17 @@ class Character:
         return healed
 
     def apply_status(self, status, turns):
-        """Aplica um estado ('vulnerable' ou 'weak'). Não acumula: fica o maior."""
-        if status == "vulnerable":
-            self._vulnerable = max(self._vulnerable, turns)
-        elif status == "weak":
-            self._weak = max(self._weak, turns)
-        elif status == "poison":
-            self._poison = max(self._poison, turns)
-        else:
+        """Aplica um estado (ver STATUS_NAMES). Não acumula: fica o maior."""
+        if status not in self._statuses:
             raise ValueError(f"Estado desconhecido: {status}")
+        self._statuses[status] = max(self._statuses[status], turns)
 
     def clear_statuses(self):
-        self._vulnerable = 0
-        self._weak = 0
-        self._poison = 0
+        self._statuses = dict.fromkeys(STATUS_NAMES, 0)
 
     def outgoing_damage(self, base):
         """Dano que EU causo: a fraqueza reduz 25%."""
-        if self._weak > 0:
+        if self.weak > 0:
             return int(base * config.WEAK_MULT)
         return base
 
@@ -116,7 +111,7 @@ class Character:
         o resto tira vida (secção 4.2 do relatório). Alguns golpes
         (ex.: Buffer Overflow) ignoram o bloqueio.
         """
-        if self._vulnerable > 0:
+        if self.vulnerable > 0:
             amount = int(amount * config.VULNERABLE_MULT)
         absorbed = 0 if ignore_block else min(self._block, amount)
         self._block -= absorbed
@@ -137,23 +132,16 @@ class Character:
         os estados duram menos 1 turno. Devolve uma mensagem se houve veneno.
         """
         mensagem = ""
-        if self._poison > 0:
+        if self.poison > 0:
             self._hp = max(0, self._hp - config.POISON_DAMAGE)
-            self._poison -= 1
             mensagem = f"{self._name} sofre {config.POISON_DAMAGE} de dano de veneno."
-        self._vulnerable = max(0, self._vulnerable - 1)
-        self._weak = max(0, self._weak - 1)
+        for estado, turnos in self._statuses.items():
+            self._statuses[estado] = max(0, turnos - 1)
         return mensagem
 
     def status_text(self):
         """Texto curto com os estados ativos, para mostrar no ecrã."""
-        partes = []
-        if self._vulnerable:
-            partes.append(f"Vulnerável({self._vulnerable})")
-        if self._weak:
-            partes.append(f"Fraco({self._weak})")
-        if self._poison:
-            partes.append(f"Envenenado({self._poison})")
+        partes = [f"{STATUS_NAMES[e]}({t})" for e, t in self._statuses.items() if t]
         return ", ".join(partes) if partes else "-"
 
 
@@ -256,8 +244,10 @@ class Player(Character):
 
     def heal_after_combat(self):
         """Recupera 10% da vida máxima (mais o que as relíquias derem)."""
-        extra = sum(r.heal_after_combat() for r in self._relics)   # pode ser negativo
-        return self.heal(max(0, int(self._max_hp * config.HEAL_AFTER_FIGHT) + extra))
+        if any(r.PREVENTS_HEALING for r in self._relics):
+            return 0
+        extra = sum(r.heal_after_combat() for r in self._relics)
+        return self.heal(int(self._max_hp * config.HEAL_AFTER_FIGHT) + extra)
 
     # ---- redefinições (polimorfismo) ----
     def outgoing_damage(self, base):

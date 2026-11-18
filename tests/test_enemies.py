@@ -4,7 +4,8 @@ import unittest
 import config
 from characters import Player
 from deck import Deck
-from enemies import Boss, Bug, Enemy, RaceCondition, Trojan, spawn_enemy
+from enemies import (Boss, Bug, Enemy, Intent, MemoryLeak, RaceCondition,
+                     Trojan, Virus, spawn_enemy)
 from modes import MODES, get_mode
 
 
@@ -86,6 +87,38 @@ class TestEnemies(unittest.TestCase):
         m.plan(3)                       # cura-se
         m.act(p)
         self.assertGreater(m.hp, hp)
+
+
+class TestIntents(unittest.TestCase):
+    def test_intent_is_abstract(self):
+        with self.assertRaises(TypeError):
+            Intent(3)
+
+    def test_every_intent_describes_itself(self):
+        for classe in Intent.__subclasses__():
+            self.assertTrue(classe(3).describe())
+
+    def test_dead_enemy_does_not_keep_attacking(self):
+        """Regressão: se o parry mata o inimigo no 1.º golpe, o 2.º não acontece."""
+        p, race = Player("T", Deck([])), RaceCondition(1)
+        race.take_damage(race.hp - 3)
+        race.plan(1)
+        p.set_parry(8)
+        mensagens = race.act(p)
+        self.assertFalse(race.is_alive)
+        self.assertEqual(len(mensagens), 1)
+        self.assertEqual(p.hp, p.max_hp)
+
+
+class TestSpawn(unittest.TestCase):
+    def test_new_enemies_only_appear_at_their_min_level(self):
+        import random
+        random.seed(1)
+        cedo = {type(spawn_enemy(1)) for _ in range(60)}
+        self.assertEqual(cedo, {Bug, Virus})
+        tarde = {type(spawn_enemy(9)) for _ in range(200)}
+        self.assertIn(MemoryLeak, tarde)
+        self.assertNotIn(Boss, tarde)
 
 
 if __name__ == "__main__":

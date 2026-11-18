@@ -61,6 +61,36 @@ class TestBattle(unittest.TestCase):
         self.assertTrue(any("Já não tens cartas" in m for m in ui.messages))
 
 
+class TestBattleRules(unittest.TestCase):
+    def test_rate_limiter_lowers_the_intent_of_the_current_turn(self):
+        """Regressão: a Fraqueza tem de reduzir já o ataque planeado neste turno."""
+        class Spy(NaiveBot):
+            def __init__(self): self.intents, self.enemy = [], None
+            def show_state(self, player, enemy, turn): self.enemy = enemy
+            def choose_purchase(self, can_draw_deck): return "attack"
+            def choose_card(self, player, hand):
+                self.intents.append(self.enemy.intent.value)
+                if len(self.intents) > 2:
+                    raise Stop
+                return next((i for i, c in enumerate(hand) if c.name == "Rate Limiter"), None)
+        p = Player("T", Deck([make_card("Rate Limiter") for _ in range(10)]))
+        ui = Spy()
+        with self.assertRaises(Stop):
+            Battle(p, Bug(9), ui).run()
+        self.assertLess(ui.intents[1], ui.intents[0])       # 8 -> 6
+
+    def test_player_wins_only_if_still_alive(self):
+        """Regressão: se o jogador morre, nunca conta como vitória."""
+        class Hopeless(NaiveBot):
+            def choose_purchase(self, can_draw_deck): return "defense"
+            def choose_card(self, player, hand): return None
+        p = Player("T", Deck([make_card("If/Else") for _ in range(10)]))
+        bug = Bug(10)
+        p.take_damage(p.hp - 1)
+        self.assertFalse(Battle(p, bug, Hopeless()).run())
+        self.assertFalse(p.is_alive)
+
+
 class TestRuns(unittest.TestCase):
     def setUp(self):
         random.seed(11)

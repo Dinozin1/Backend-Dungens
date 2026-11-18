@@ -92,14 +92,8 @@ class Deck:
         """Põe na mão uma carta comprada fora do baralho (a compra do turno)."""
         self._hand.append(card)
 
-    def play_from_hand(self, index):
-        """Tira a carta da mão para o descarte e devolve-a."""
-        carta = self._hand.pop(index)
-        self._discard.append(carta)
-        return carta
-
     def discard_from_hand(self, index):
-        """Descarta uma carta da mão (usado quando a mão passa do limite)."""
+        """Tira a carta da mão para o descarte e devolve-a (carta jogada ou descartada)."""
         carta = self._hand.pop(index)
         self._discard.append(carta)
         return carta

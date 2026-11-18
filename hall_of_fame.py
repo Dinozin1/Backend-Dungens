@@ -10,6 +10,10 @@ import json
 import os
 from pathlib import Path
 
+import config
+from fileutil import write_text_atomic
+from names import is_acceptable_name
+
 DEFAULT_PATH = Path(__file__).parent / "scores.json"
 
 
@@ -55,10 +59,15 @@ class ScoreEntry:
         name, score = data.get("name"), data.get("score")
         rooms, won = data.get("rooms"), data.get("won")
         mode = data.get("mode", "normal")   # ficheiros antigos não têm modo
-        if (not isinstance(name, str) or not isinstance(score, int)
-                or not isinstance(rooms, int) or not isinstance(won, bool)
-                or not isinstance(mode, str)):
+        # bool é subclasse de int em Python: "True" não é uma pontuação válida
+        if (not isinstance(name, str) or not isinstance(mode, str)
+                or not isinstance(won, bool)
+                or any(not isinstance(x, int) or isinstance(x, bool) for x in (score, rooms))):
             raise ValueError("campos inválidos")
+        if not name.strip() or len(name) > config.PLAYER_NAME_MAX:
+            raise ValueError("nome inválido")
+        if not is_acceptable_name(name):      # ficheiro editado à mão com nomes impróprios
+            raise ValueError("nome não permitido")
         return cls(name, score, rooms, won, mode)
 
 
@@ -118,8 +127,8 @@ class HallOfFame:
             return True
         try:
             dados = [e.to_dict() for e in self._entries]
-            self._path.write_text(json.dumps(dados, indent=2, ensure_ascii=False),
-                                  encoding="utf-8")
+            write_text_atomic(self._path,
+                              json.dumps(dados, indent=2, ensure_ascii=False))
             return True
         except OSError:
             return False

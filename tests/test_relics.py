@@ -51,7 +51,16 @@ class TestRelics(unittest.TestCase):
         antes = p.energy
         for _ in range(5):
             p.notify_card_played(None)
-        self.assertEqual(p.energy, antes + 1)
+        self.assertEqual(p.energy, antes + 3)
+
+    def test_catalog_is_built_from_subclasses(self):
+        from relics import Relic
+        self.assertEqual(len(RELIC_FACTORIES), len(Relic.__subclasses__()))
+
+    def test_legacy_code_blocks_healing_even_with_backup(self):
+        p = player_with("Backup", "Código Legado")
+        p.take_damage(30)
+        self.assertEqual(p.heal_after_combat(), 0)
 
     def test_every_relic_can_be_built(self):
         for nome in RELIC_FACTORIES:

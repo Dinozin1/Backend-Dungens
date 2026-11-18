@@ -9,8 +9,10 @@ O combate chama sempre card.play(...) sem saber de que tipo é a carta.
 Cada carta tem uma versão melhorada ("Segfault+") que se obtém no REFACTOR.
 """
 from abc import ABC, abstractmethod
+from functools import partial
 
 import config
+from characters import STATUS_NAMES
 
 # Texto devolvido pelo menu de recompensas quando o jogador escolhe melhorar uma carta.
 REFACTOR_OPTION = "refactor"
@@ -141,13 +143,11 @@ class BuffCard(Card):
 class DebuffCard(Card):
     """Aplica um estado negativo (vulnerável / fraqueza / veneno) ao inimigo."""
 
-    NOMES = {"vulnerable": "Vulnerável", "weak": "Fraco", "poison": "Envenenado"}
-
     def __init__(self, name, cost, status, turns):
         extra = (f" ({config.POISON_DAMAGE} de dano por turno, ignora o bloqueio)"
                  if status == "poison" else "")
         super().__init__(name, cost,
-                         f"O inimigo fica {self.NOMES[status]} durante {turns} turnos{extra}")
+                         f"O inimigo fica {STATUS_NAMES[status]} durante {turns} turnos{extra}")
         self._status = status
         self._turns = turns
 
@@ -157,7 +157,7 @@ class DebuffCard(Card):
 
     def play(self, player, enemy):
         enemy.apply_status(self._status, self._turns)
-        return f"{enemy.name} fica {self.NOMES[self._status]} durante {self._turns} turnos."
+        return f"{enemy.name} fica {STATUS_NAMES[self._status]} durante {self._turns} turnos."
 
 
 class ParryCard(Card):
@@ -193,7 +193,7 @@ class EnergyCard(Card):
     def __init__(self, name, cost, energy, self_status, turns):
         super().__init__(name, cost,
                          f"Ganhas {energy} de energia, mas ficas "
-                         f"{DebuffCard.NOMES[self_status]} durante {turns} turnos")
+                         f"{STATUS_NAMES[self_status]} durante {turns} turnos")
         self._energy = energy
         self._status = self_status
         self._turns = turns
@@ -202,62 +202,45 @@ class EnergyCard(Card):
         player.gain_energy(self._energy)
         player.apply_status(self._status, self._turns)
         return (f"Ganhas {self._energy} de energia, mas ficas "
-                f"{DebuffCard.NOMES[self._status]} durante {self._turns} turnos!")
+                f"{STATUS_NAMES[self._status]} durante {self._turns} turnos!")
 
 
 # ---------------------------------------------------------------------------
-# Catálogo: nome -> (carta normal, carta melhorada). A melhorada chama-se
-# "<nome>+" e obtém-se no REFACTOR (só se melhora uma vez).
+# Catálogo orientado a dados: nome -> (classe, argumentos normais, argumentos
+# melhorados). Os argumentos são os que vêm a seguir ao nome no __init__ da classe.
+# A versão melhorada chama-se "<nome>+" e obtém-se no REFACTOR (só uma vez).
+# Para criar uma carta nova basta acrescentar uma linha.
 # ---------------------------------------------------------------------------
 _CARDS = {
-    # --- ataques ---
-    'Print("Hit")': (lambda: AttackCard('Print("Hit")', 1, 5),
-                     lambda: AttackCard('Print("Hit")+', 1, 8)),
-    "Segfault": (lambda: AttackCard("Segfault", 3, 12),
-                 lambda: AttackCard("Segfault+", 3, 16)),
-    "Fork Bomb": (lambda: AttackCard("Fork Bomb", 4, 6, hits=2),
-                  lambda: AttackCard("Fork Bomb+", 4, 8, hits=2)),
-    "Kernel Panic": (lambda: AttackCard("Kernel Panic", 6, 28),
-                     lambda: AttackCard("Kernel Panic+", 6, 36)),
-    "Buffer Overflow": (lambda: PiercingAttackCard("Buffer Overflow", 3, 10),
-                        lambda: PiercingAttackCard("Buffer Overflow+", 3, 14)),
-    "Infinite Loop": (lambda: RecoilAttackCard("Infinite Loop", 2, 12, 4),
-                      lambda: RecoilAttackCard("Infinite Loop+", 2, 16, 3)),
-    # --- defesa, cura e parry ---
-    "If/Else": (lambda: DefenseCard("If/Else", 1, 5),
-                lambda: DefenseCard("If/Else+", 1, 8)),
-    "Try/Catch": (lambda: DefenseCard("Try/Catch", 2, 10),
-                  lambda: DefenseCard("Try/Catch+", 2, 14)),
-    "Firewall": (lambda: DefenseCard("Firewall", 4, 18),
-                 lambda: DefenseCard("Firewall+", 4, 24)),
-    "Ctrl+Z": (lambda: HealCard("Ctrl+Z", 2, 8),
-               lambda: HealCard("Ctrl+Z+", 2, 12)),
-    "Catch & Return": (lambda: ParryCard("Catch & Return", 3, 8),
-                       lambda: ParryCard("Catch & Return+", 3, 14)),
+    # --- ataques: (custo, dano[, golpes ou recuo]) ---
+    'Print("Hit")': (AttackCard, (1, 5), (1, 8)),
+    "Segfault": (AttackCard, (3, 12), (3, 16)),
+    "Fork Bomb": (AttackCard, (4, 6, 2), (4, 8, 2)),
+    "Kernel Panic": (AttackCard, (6, 28), (6, 36)),
+    "Buffer Overflow": (PiercingAttackCard, (3, 10), (3, 14)),
+    "Infinite Loop": (RecoilAttackCard, (2, 12, 4), (2, 16, 3)),
+    # --- defesa, cura e parry: (custo, valor) ---
+    "If/Else": (DefenseCard, (1, 5), (1, 8)),
+    "Try/Catch": (DefenseCard, (2, 10), (2, 14)),
+    "Firewall": (DefenseCard, (4, 18), (4, 24)),
+    "Ctrl+Z": (HealCard, (2, 8), (2, 12)),
+    "Catch & Return": (ParryCard, (3, 8), (3, 14)),
     # --- buffs, debuffs e utilidade ---
-    "Debug Mode": (lambda: BuffCard("Debug Mode", 2, 5),
-                   lambda: BuffCard("Debug Mode+", 2, 8)),
-    "Stack Overflow": (lambda: DebuffCard("Stack Overflow", 2, "vulnerable", 2),
-                       lambda: DebuffCard("Stack Overflow+", 2, "vulnerable", 3)),
-    "Rate Limiter": (lambda: DebuffCard("Rate Limiter", 2, "weak", 2),
-                     lambda: DebuffCard("Rate Limiter+", 2, "weak", 3)),
-    "Zombie Process": (lambda: DebuffCard("Zombie Process", 2, "poison", 4),
-                       lambda: DebuffCard("Zombie Process+", 2, "poison", 6)),
-    "Garbage Collector": (lambda: DrawCard("Garbage Collector", 1, 2),
-                          lambda: DrawCard("Garbage Collector+", 1, 3)),
+    "Debug Mode": (BuffCard, (2, 5), (2, 8)),
+    "Stack Overflow": (DebuffCard, (2, "vulnerable", 2), (2, "vulnerable", 3)),
+    "Rate Limiter": (DebuffCard, (2, "weak", 2), (2, "weak", 3)),
+    "Zombie Process": (DebuffCard, (2, "poison", 4), (2, "poison", 6)),
+    "Garbage Collector": (DrawCard, (1, 2), (1, 3)),
     # --- risco / recompensa ---
-    "Sudo": (lambda: EnergyCard("Sudo", 1, 3, "vulnerable", 2),
-             lambda: EnergyCard("Sudo+", 1, 4, "vulnerable", 1)),
+    "Sudo": (EnergyCard, (1, 3, "vulnerable", 2), (1, 4, "vulnerable", 1)),
 }
 
 CARD_FACTORIES = {}   # nome -> função que cria a carta (inclui as melhoradas)
 UPGRADES = {}         # nome -> nome da versão melhorada
-for _nome, (_normal, _melhorada) in _CARDS.items():
-    CARD_FACTORIES[_nome] = _normal
-    _plus = _melhorada().name
-    assert _plus == _nome + "+", _nome
-    CARD_FACTORIES[_plus] = _melhorada
-    UPGRADES[_nome] = _plus
+for _nome, (_classe, _normal, _melhorada) in _CARDS.items():
+    CARD_FACTORIES[_nome] = partial(_classe, _nome, *_normal)
+    CARD_FACTORIES[_nome + "+"] = partial(_classe, _nome + "+", *_melhorada)
+    UPGRADES[_nome] = _nome + "+"
 
 BASIC_ATTACK = 'Print("Hit")'
 BASIC_DEFENSE = "If/Else"

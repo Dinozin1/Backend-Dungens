@@ -1,63 +1,151 @@
 """
-ui.py - Interface em modo texto (consola), sem bibliotecas externas.
+ui.py - Contrato das interfaces (RunUI e GameUI) e a interface em modo texto.
 
-Toda a comunicação com o jogador (print/input) vive aqui. A lógica do jogo
-só chama estes métodos, por isso mais tarde basta escrever uma classe com
-os mesmos métodos em pygame para ter a versão 2D. A versão colorida
-(ui_rich.py) herda desta classe e só redefine a parte visual.
+Toda a comunicação com o jogador (print/input) vive nas interfaces. A lógica
+(Game, Battle) só chama os métodos abaixo, por isso trocar o ecrã não obriga a
+reescrever o jogo:
+
+  RunUI   - o que uma run precisa (nome, combate, recompensas). Os bots do
+            simulate.py implementam só isto.
+  GameUI  - RunUI + os menus (menu principal, ajuda, recordes).
+  TextUI  - GameUI em texto simples, sem bibliotecas externas.
+  RichUI  - (ui_rich.py) herda de TextUI e só redefine a parte VISUAL.
+
+Padrão "template method": TextUI.choose_card() mostra a mão (_show_hand) e valida a
+resposta; as subclasses redefinem só o _show_*, a validação (R4) fica igual.
 """
+from abc import ABC, abstractmethod
+
 import config
-from cards import REFACTOR_OPTION
+from cards import BASIC_ATTACK, BASIC_DEFENSE, REFACTOR_OPTION
 from modes import MODES
+from names import is_acceptable_name
 
 
 class QuitGame(Exception):
     """Lançada quando o jogador quer sair (ou o input acaba)."""
 
 
-class TextUI:
+class RunUI(ABC):
+    """O que uma run precisa de uma interface (jogador humano ou bot)."""
+
+    @abstractmethod
+    def ask_name(self):
+        """Devolve o nome do jogador (já validado)."""
+
+    @abstractmethod
+    def confirm(self, question):
+        """Pergunta sim/não. Devolve True para sim."""
+
+    @abstractmethod
+    def message(self, text):
+        """Mostra uma mensagem do jogo."""
+
+    @abstractmethod
+    def show_state(self, player, enemy, turn):
+        """Mostra o estado do combate no início do turno."""
+
+    @abstractmethod
+    def choose_purchase(self, can_draw_deck):
+        """Devolve 'attack', 'defense' ou 'deck' (só se can_draw_deck)."""
+
+    @abstractmethod
+    def choose_card(self, player, hand):
+        """Devolve o índice da carta a jogar, ou None para terminar o turno."""
+
+    @abstractmethod
+    def choose_discard(self, hand):
+        """Devolve o índice da carta a descartar."""
+
+    @abstractmethod
+    def choose_reward(self, options, can_upgrade=False):
+        """Devolve uma Carta, REFACTOR_OPTION (se can_upgrade) ou None (nada)."""
+
+    @abstractmethod
+    def choose_upgrade(self, pairs):
+        """pairs = [(carta atual, carta melhorada)]. Devolve o índice ou None (voltar)."""
+
+    @abstractmethod
+    def choose_relic(self, options):
+        """Devolve a relíquia escolhida (obrigatório)."""
+
+
+class GameUI(RunUI):
+    """RunUI + os menus do jogo."""
+
+    @abstractmethod
+    def main_menu(self, has_save=False):
+        """Devolve a chave de um modo, ou 'continue', 'hall', 'help' ou 'quit'."""
+
+    @abstractmethod
+    def show_help(self):
+        """Mostra as instruções."""
+
+    @abstractmethod
+    def show_hall(self, tables, warning=""):
+        """tables = lista de (título, [ScoreEntry...]), uma tabela por modo."""
+
+
+class TextUI(GameUI):
     # ---------- entrada validada (R4: entrada errada não rebenta o jogo) ----------
+    def _read(self, prompt):
+        """Lê uma linha. As subclasses podem mudar o aspeto da pergunta."""
+        try:
+            return input(prompt)
+        except EOFError:
+            raise QuitGame
+
     def _ask(self, prompt, valid):
         """Pergunta até receber uma resposta que esteja na lista 'valid'."""
         while True:
-            try:
-                resposta = input(prompt).strip().lower()
-            except EOFError:
-                raise QuitGame
+            resposta = self._read(prompt).strip().lower()
             if resposta in valid:
                 return resposta
-            print(f"  Opção inválida. Escolhe uma de: {', '.join(valid)}")
+            self.message(f"  Opção inválida. Escolhe uma de: {', '.join(valid)}")
 
     def ask_name(self):
         while True:
-            try:
-                nome = input("Como se chama o programador? ").strip()
-            except EOFError:
-                raise QuitGame
-            if nome:
-                return nome[:config.PLAYER_NAME_MAX]
-            print("  O nome não pode estar vazio.")
+            nome = self._read("Como se chama o programador? ").strip()
+            nome = nome[:config.PLAYER_NAME_MAX]
+            if not nome:
+                self.message("  O nome não pode estar vazio.")
+            elif not is_acceptable_name(nome):
+                self.message("  Esse nome não é permitido. Escolhe outro.")
+            else:
+                return nome
+
+    def confirm(self, question):
+        return self._ask(f"{question} (s/n) ", ["s", "n"]) == "s"
+
+    def message(self, text):
+        print(text)
 
     # ---------- menus ----------
-    def main_menu(self, has_save=False):
-        """Devolve a chave do modo escolhido, ou 'continue', 'hall', 'help', 'quit'."""
+    @staticmethod
+    def _menu_options(has_save):
+        opcoes = [(m.key, f"Jogar - {m.label}") for m in MODES.values()]
+        if has_save:
+            opcoes.append(("continue", "Continuar a run guardada"))
+        return opcoes + [("hall", "Recordes"), ("help", "Como jogar"), ("quit", "Sair")]
+
+    def _show_menu(self, opcoes):
         print("\n" + "=" * 44)
         print("        BACKEND DUNGEONS")
         print("  Limpa o sistema infetado, sala a sala!")
         print("=" * 44)
-        opcoes = [(m.key, f"Jogar - {m.label}") for m in MODES.values()]
-        if has_save:
-            opcoes.append(("continue", "Continuar a run guardada"))
-        opcoes += [("hall", "Recordes"), ("help", "Como jogar"), ("quit", "Sair")]
         for i, (_, texto) in enumerate(opcoes, 1):
             print(f" {i}) {texto}")
+
+    def main_menu(self, has_save=False):
+        opcoes = self._menu_options(has_save)
+        self._show_menu(opcoes)
         escolha = self._ask("> ", [str(i) for i in range(1, len(opcoes) + 1)])
         return opcoes[int(escolha) - 1][0]
 
-    def show_help(self):
-        print(f"""
-COMO JOGAR
-- Percorres 10 salas (modo normal) ou 5 (modo rápido); na última está o boss.
+    @staticmethod
+    def help_text():
+        modos = " ou ".join(m.label for m in MODES.values())
+        return f"""- Percorres várias salas (modos: {modos}); na última está o boss.
 - Cada turno: compras 1 carta e depois jogas as que quiseres. Podes comprar:
   básica de ataque, básica de defesa ou uma carta do teu BARALHO (onde estão as
   cartas especiais que foste ganhando como recompensa).
@@ -70,10 +158,12 @@ COMO JOGAR
 - RELÍQUIAS: em certas salas escolhes 1 de 2; mudam as regras até ao fim da run.
 - Depois do turno {config.ENRAGE_TURN} os inimigos enfurecem-se (+1 de dano por turno).
 - O boss esconde as ações, mas segue um padrão. Observa o histórico!
-- A run é gravada depois de cada combate: podes sair e continuar mais tarde.""")
+- A run é gravada depois de cada combate: podes sair e continuar mais tarde."""
+
+    def show_help(self):
+        print("\nCOMO JOGAR\n" + self.help_text())
 
     def show_hall(self, tables, warning=""):
-        """tables = lista de (título, [ScoreEntry...]), uma tabela por modo."""
         print("\n--- RECORDES ---")
         if warning:
             print(f"(aviso: {warning})")
@@ -107,48 +197,56 @@ COMO JOGAR
         if player.relics:
             print("  Relíquias: " + ", ".join(r.name for r in player.relics))
 
-    def choose_purchase(self, can_draw_deck):
+    def _show_purchase(self, can_draw_deck):
         print("\nCompra do turno (escolhe 1):")
-        print(' 1) Carta básica de ATAQUE   - Print("Hit")')
-        print(" 2) Carta básica de DEFESA   - If/Else")
-        validas = ["1", "2"]
+        print(f" 1) Carta básica de ATAQUE   - {BASIC_ATTACK}")
+        print(f" 2) Carta básica de DEFESA   - {BASIC_DEFENSE}")
         if can_draw_deck:
             print(" 3) Carta do teu BARALHO     (o que construíste na run)")
-            validas.append("3")
+
+    def choose_purchase(self, can_draw_deck):
+        self._show_purchase(can_draw_deck)
+        validas = ["1", "2"] + (["3"] if can_draw_deck else [])
         return {"1": "attack", "2": "defense", "3": "deck"}[self._ask("> ", validas)]
 
-    def choose_card(self, player, hand):
-        """Devolve o índice da carta a jogar, ou None para terminar o turno."""
+    def _show_hand(self, player, hand):
         print(f"\nMão (energia {player.energy}):")
         for i, carta in enumerate(hand, 1):
             aviso = "" if player.can_afford(carta.cost) else "  (sem energia)"
             print(f" {i}) {carta}{aviso}")
         print(" 0) Terminar turno")
+
+    def choose_card(self, player, hand):
+        self._show_hand(player, hand)
         validas = ["0"] + [str(i) for i in range(1, len(hand) + 1)]
         escolha = int(self._ask("> ", validas))
         return None if escolha == 0 else escolha - 1
 
-    def choose_discard(self, hand):
+    def _show_discard(self, hand):
         print(f"\nA mão passou de {config.HAND_LIMIT} cartas! Descarta uma:")
         for i, carta in enumerate(hand, 1):
             print(f" {i}) {carta}")
+
+    def choose_discard(self, hand):
+        self._show_discard(hand)
         validas = [str(i) for i in range(1, len(hand) + 1)]
         return int(self._ask("> ", validas)) - 1
 
-    def choose_reward(self, options, can_upgrade=False):
-        """
-        Recompensa de fim de combate. Devolve uma Carta (nova no baralho),
-        REFACTOR_OPTION (melhorar uma carta que já tens) ou None (nada).
-        """
+    def _show_reward(self, options, can_upgrade):
         print("\nRecompensa! Escolhe uma carta para o baralho:")
         for i, carta in enumerate(options, 1):
             print(f" {i}) {carta}")
+        if can_upgrade:
+            print(f" {len(options) + 1}) REFACTOR: melhora uma carta do teu baralho")
+        print(" 0) Nenhuma (mantém o baralho pequeno)")
+
+    def choose_reward(self, options, can_upgrade=False):
+        """Recompensa de fim de combate: Carta, REFACTOR_OPTION ou None (nada)."""
+        self._show_reward(options, can_upgrade)
         validas = ["0"] + [str(i) for i in range(1, len(options) + 1)]
         refactor = str(len(options) + 1)
         if can_upgrade:
-            print(f" {refactor}) REFACTOR: melhora uma carta do teu baralho")
             validas.append(refactor)
-        print(" 0) Nenhuma (mantém o baralho pequeno)")
         escolha = self._ask("> ", validas)
         if escolha == "0":
             return None
@@ -156,23 +254,24 @@ COMO JOGAR
             return REFACTOR_OPTION
         return options[int(escolha) - 1]
 
-    def choose_upgrade(self, pairs):
-        """pairs = [(carta atual, carta melhorada)]. Devolve o índice ou None (voltar)."""
+    def _show_upgrades(self, pairs):
         print("\nREFACTOR - que carta queres melhorar?")
         for i, (antes, depois) in enumerate(pairs, 1):
             print(f" {i}) {antes}\n      => {depois}")
         print(" 0) Voltar atrás")
+
+    def choose_upgrade(self, pairs):
+        self._show_upgrades(pairs)
         validas = ["0"] + [str(i) for i in range(1, len(pairs) + 1)]
         escolha = int(self._ask("> ", validas))
         return None if escolha == 0 else escolha - 1
 
-    def choose_relic(self, options):
-        """Escolhe 1 relíquia (obrigatório). Devolve a relíquia."""
+    def _show_relics(self, options):
         print("\nENCONTRASTE UMA RELÍQUIA! Escolhe uma (dura até ao fim da run):")
         for i, relic in enumerate(options, 1):
             print(f" {i}) {relic}")
+
+    def choose_relic(self, options):
+        self._show_relics(options)
         validas = [str(i) for i in range(1, len(options) + 1)]
         return options[int(self._ask("> ", validas)) - 1]
-
-    def message(self, text):
-        print(text)

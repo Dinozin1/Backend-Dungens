@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cards import CARD_FACTORIES
+from fileutil import write_text_atomic
 from modes import MODES
 from relics import RELIC_FACTORIES
 
@@ -44,8 +45,8 @@ class SaveGame:
             "mode": mode.key, "next_room": next_room, "total_turns": total_turns,
         }
         try:
-            self._path.write_text(json.dumps(dados, indent=2, ensure_ascii=False),
-                                  encoding="utf-8")
+            write_text_atomic(self._path,
+                              json.dumps(dados, indent=2, ensure_ascii=False))
             return True
         except OSError:
             return False

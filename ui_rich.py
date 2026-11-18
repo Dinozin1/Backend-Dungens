@@ -1,28 +1,75 @@
 """
 ui_rich.py - Interface a cores com a biblioteca "rich" (opcional).
 
-Herda de TextUI e só redefine a parte VISUAL (estado do combate, mão, recordes).
-A validação das entradas e as regras continuam iguais. Se o rich não estiver
-instalado, o main.py usa a TextUI normal.
+Herda de TextUI e redefine só a parte VISUAL (os métodos _show_*, o estado do
+combate, os menus e os recordes). A validação das entradas (R4) e as regras são
+as da TextUI. Se o rich não estiver instalado, o main.py usa a TextUI normal.
 
 Nota: os textos passam sempre por Text(...) para o rich não interpretar
 os "[custo 1]" das cartas como etiquetas de formatação.
 """
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
 import config
-from ui import TextUI
+from cards import (BASIC_ATTACK, BASIC_DEFENSE, AttackCard, BuffCard, DebuffCard,
+                   DefenseCard, DrawCard, EnergyCard, HealCard, ParryCard,
+                   RecoilAttackCard, make_card)
+from ui import QuitGame, TextUI
+
+# Tipo de carta -> (nome mostrado, cor). A ordem conta: a primeira que servir ganha.
+CARD_KINDS = (
+    (AttackCard, "Ataque", "red"),
+    (DefenseCard, "Defesa", "cyan"),
+    (HealCard, "Cura", "green"),
+    (ParryCard, "Parry", "yellow"),
+    (BuffCard, "Buff", "bright_magenta"),
+    (DebuffCard, "Debuff", "magenta"),
+    (DrawCard, "Compra", "blue"),
+    (EnergyCard, "Energia", "bright_yellow"),
+)
+RISKY = (RecoilAttackCard, EnergyCard)
+
+# O que o inimigo vai fazer -> cor da intenção.
+INTENT_STYLES = {"attack": "bold red", "defend": "cyan", "weaken": "magenta",
+                 "expose": "magenta", "heal": "green"}
+
+# Mensagens do jogo -> estilo (a primeira regra que coincidir ganha).
+MESSAGE_STYLES = (
+    ("VITÓRIA", "bold green"), ("FIM DA RUN", "bold red"),
+    ("vida chegou a 0", "bold red"), ("foi derrotado", "bold green"),
+    (">>>", "bold cyan"), ("PARRY", "bold yellow"), ("REFACTOR", "bold magenta"),
+    ("Relíquia obtida", "bright_blue"), ("inválid", "yellow"), ("não é permitido", "yellow"),
+    ("ataca!", "red"), ("->", "yellow"), ("Recuperas", "green"), ("cura-se", "green"),
+    ("veneno", "green"),
+)
+
+
+def card_kind(card):
+    """(nome, cor) do tipo da carta; as de risco ficam marcadas."""
+    for classe, nome, cor in CARD_KINDS:
+        if isinstance(card, classe):
+            return (nome + " (risco)" if isinstance(card, RISKY) else nome), cor
+    return "Carta", "white"
 
 
 class RichUI(TextUI):
     def __init__(self):
         self._console = Console()
 
+    # ---------- base ----------
+    def _read(self, prompt):
+        try:
+            return self._console.input(Text(prompt, style="bold cyan"))
+        except EOFError:
+            raise QuitGame
+
     def message(self, text):
-        self._console.print(Text(text))
+        estilo = next((s for chave, s in MESSAGE_STYLES if chave in text), None)
+        self._console.print(Text(text, style=estilo or ""))
 
     @staticmethod
     def _bar(valor, maximo, cor, tamanho=20):
@@ -32,17 +79,80 @@ class RichUI(TextUI):
         barra.append("░" * (tamanho - cheio), style="grey37")
         return barra
 
+    @staticmethod
+    def _hp_color(hp, max_hp):
+        ratio = hp / max_hp if max_hp else 0
+        return "green" if ratio > 0.5 else "yellow" if ratio > 0.25 else "red"
+
+    def _cards_table(self, title, cards, player=None, first_col="#"):
+        """Tabela de cartas (mão, recompensas, descarte). Sem energia fica a cinzento."""
+        tabela = Table(title=title, header_style="bold", box=box.ROUNDED)
+        tabela.add_column(first_col, justify="right")
+        tabela.add_column("Carta")
+        tabela.add_column("Tipo")
+        tabela.add_column("Custo", justify="center")
+        tabela.add_column("Efeito")
+        for i, carta in enumerate(cards, 1):
+            tipo, cor = card_kind(carta)
+            pagavel = player is None or player.can_afford(carta.cost)
+            estilo = None if pagavel else "dim"
+            tabela.add_row(Text(str(i)), Text(carta.name, style=f"bold {cor}"),
+                           Text(tipo, style=cor), Text(str(carta.cost), style="yellow"),
+                           Text(carta.description), style=estilo)
+        self._console.print(tabela)
+
+    def _option(self, number, text, style="white"):
+        linha = Text()
+        linha.append(f" {number}) ", style="bold cyan")
+        linha.append(text, style=style)
+        self._console.print(linha)
+
+    # ---------- menus ----------
+    def _show_menu(self, opcoes):
+        titulo = Text(justify="center")
+        titulo.append("BACKEND DUNGEONS\n", style="bold bright_green")
+        titulo.append("Limpa o sistema infetado, sala a sala!", style="italic")
+        self._console.print(Panel(titulo, border_style="bright_green", box=box.DOUBLE))
+        for i, (chave, texto) in enumerate(opcoes, 1):
+            self._option(i, texto, "bold yellow" if chave == "continue" else "white")
+
+    def show_help(self):
+        self._console.print(Panel(Text(self.help_text()), title="Como jogar",
+                                  border_style="cyan"))
+
+    def show_hall(self, tables, warning=""):
+        if warning:
+            self._console.print(Text(f"(aviso: {warning})", style="yellow"))
+        medalhas = {1: "bold yellow", 2: "bold white", 3: "bold #cd7f32"}
+        for titulo, entradas in tables:
+            tabela = Table(title=f"Recordes - {titulo}", box=box.ROUNDED)
+            for coluna in ("#", "Nome", "Pontos", "Resultado"):
+                tabela.add_column(coluna)
+            for i, e in enumerate(entradas, 1):
+                tabela.add_row(Text(str(i)), Text(e.name), Text(str(e.score)),
+                               Text("VITÓRIA" if e.won else f"sala {e.rooms}",
+                                    style="green" if e.won else "red"),
+                               style=medalhas.get(i))
+            if not entradas:
+                tabela.add_row(Text("-"), Text("Ainda não há recordes."), Text(""), Text(""))
+            self._console.print(tabela)
+
+    # ---------- combate ----------
     def show_state(self, player, enemy, turn):
         quadro = Table.grid(padding=(0, 2))
-        for atacante, cor in ((enemy, "red"), (player, "green")):
+        for personagem in (enemy, player):
             quadro.add_row(
-                Text(atacante.name, style="bold"),
-                self._bar(atacante.hp, atacante.max_hp, cor),
-                Text(f"{atacante.hp}/{atacante.max_hp}"),
-                Text(f"bloqueio {atacante.block}", style="cyan"),
-                Text(atacante.status_text(), style="yellow"))
+                Text(personagem.name, style="bold"),
+                self._bar(personagem.hp, personagem.max_hp,
+                          self._hp_color(personagem.hp, personagem.max_hp)),
+                Text(f"{personagem.hp}/{personagem.max_hp}"),
+                Text(f"bloqueio {personagem.block}", style="cyan"),
+                Text(personagem.status_text(), style="yellow"))
+        texto_intencao = enemy.describe_intent()
+        estilo = ("bold magenta" if "???" in texto_intencao
+                  else INTENT_STYLES.get(enemy.intent.kind, ""))
         corpo = Text()
-        corpo.append(f"Intenção: {enemy.describe_intent()}\n", style="bold magenta")
+        corpo.append(f"Intenção: {texto_intencao}\n", style=estilo)
         corpo.append(f"Energia {player.energy}/{config.MAX_ENERGY}", style="bold yellow")
         corpo.append(f"   Baralho {player.deck.draw_pile_size}"
                      f"   Descarte {player.deck.discard_size}")
@@ -54,30 +164,53 @@ class RichUI(TextUI):
         grelha.add_row(corpo)
         self._console.print(Panel(grelha, title=f"Turno {turn}", border_style="cyan"))
 
-    def choose_card(self, player, hand):
-        tabela = Table(title=f"Mão (energia {player.energy})", header_style="bold")
-        tabela.add_column("#", justify="right")
-        tabela.add_column("Carta")
-        tabela.add_column("Custo", justify="center")
-        tabela.add_column("Efeito")
-        for i, carta in enumerate(hand, 1):
-            estilo = None if player.can_afford(carta.cost) else "dim"
-            tabela.add_row(Text(str(i)), Text(carta.name), Text(str(carta.cost)),
-                           Text(carta.description), style=estilo)
-        self._console.print(tabela)
-        print(" 0) Terminar turno")
-        validas = ["0"] + [str(i) for i in range(1, len(hand) + 1)]
-        escolha = int(self._ask("> ", validas))
-        return None if escolha == 0 else escolha - 1
+    def _show_purchase(self, can_draw_deck):
+        self._console.print(Text("\nCompra do turno (escolhe 1):", style="bold"))
+        for numero, nome, rotulo in ((1, BASIC_ATTACK, "ATAQUE"), (2, BASIC_DEFENSE, "DEFESA")):
+            carta = make_card(nome)
+            _, cor = card_kind(carta)
+            self._option(numero, f"Carta básica de {rotulo} - {carta.name} "
+                                 f"[custo {carta.cost}] {carta.description}", cor)
+        if can_draw_deck:
+            self._option(3, "Carta do teu BARALHO (o que construíste na run)", "bold yellow")
 
-    def show_hall(self, tables, warning=""):
-        if warning:
-            self._console.print(Text(f"(aviso: {warning})", style="yellow"))
-        for titulo, entradas in tables:
-            tabela = Table(title=f"Recordes - {titulo}")
-            for coluna in ("#", "Nome", "Pontos", "Resultado"):
-                tabela.add_column(coluna)
-            for i, e in enumerate(entradas, 1):
-                tabela.add_row(Text(str(i)), Text(e.name), Text(str(e.score)),
-                               Text("VITÓRIA" if e.won else f"sala {e.rooms}"))
-            self._console.print(tabela)
+    def _show_hand(self, player, hand):
+        self._cards_table(f"Mão (energia {player.energy})", hand, player)
+        self._option(0, "Terminar turno", "dim")
+
+    def _show_discard(self, hand):
+        self.message(f"\nA mão passou de {config.HAND_LIMIT} cartas! Descarta uma:")
+        self._cards_table("Descartar", hand)
+
+    def _show_reward(self, options, can_upgrade):
+        self._console.print(Text("\nRecompensa! Escolhe uma carta para o baralho:",
+                                 style="bold green"))
+        self._cards_table("Recompensa", options)
+        if can_upgrade:
+            self._option(len(options) + 1, "REFACTOR: melhora uma carta do teu baralho",
+                         "bold magenta")
+        self._option(0, "Nenhuma (mantém o baralho pequeno)", "dim")
+
+    def _show_upgrades(self, pairs):
+        tabela = Table(title="REFACTOR - que carta queres melhorar?", box=box.ROUNDED)
+        for coluna in ("#", "Agora", "Depois"):
+            tabela.add_column(coluna)
+        for i, (antes, depois) in enumerate(pairs, 1):
+            _, cor = card_kind(antes)
+            tabela.add_row(Text(str(i)),
+                           Text(f"{antes.name} - {antes.description}", style=cor),
+                           Text(f"{depois.name} - {depois.description}",
+                                style=f"bold {cor}"))
+        self._console.print(tabela)
+        self._option(0, "Voltar atrás", "dim")
+
+    def _show_relics(self, options):
+        tabela = Table(title="Encontraste uma relíquia! (dura até ao fim da run)",
+                       box=box.ROUNDED)
+        for coluna in ("#", "Relíquia", "Efeito"):
+            tabela.add_column(coluna)
+        for i, relic in enumerate(options, 1):
+            risco = relic.description.startswith("RISCO")
+            tabela.add_row(Text(str(i)), Text(relic.name, style="bold bright_blue"),
+                           Text(relic.description, style="red" if risco else ""))
+        self._console.print(tabela)
