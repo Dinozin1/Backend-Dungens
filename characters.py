@@ -40,6 +40,7 @@ class Character:
         self._block = 0
         self._vulnerable = 0   # turnos que faltam de "Vulnerável"
         self._weak = 0         # turnos que faltam de "Fraqueza"
+        self._poison = 0       # turnos que faltam de "Veneno"
 
     # ---- leitura (propriedades só de leitura) ----
     @property
@@ -67,6 +68,10 @@ class Character:
         return self._weak
 
     @property
+    def poison(self):
+        return self._poison
+
+    @property
     def is_alive(self):
         return self._hp > 0
 
@@ -89,12 +94,15 @@ class Character:
             self._vulnerable = max(self._vulnerable, turns)
         elif status == "weak":
             self._weak = max(self._weak, turns)
+        elif status == "poison":
+            self._poison = max(self._poison, turns)
         else:
             raise ValueError(f"Estado desconhecido: {status}")
 
     def clear_statuses(self):
         self._vulnerable = 0
         self._weak = 0
+        self._poison = 0
 
     def outgoing_damage(self, base):
         """Dano que EU causo: a fraqueza reduz 25%."""
@@ -102,14 +110,15 @@ class Character:
             return int(base * config.WEAK_MULT)
         return base
 
-    def take_damage(self, amount):
+    def take_damage(self, amount, ignore_block=False):
         """
         Recebe dano: vulnerável aumenta 50%, o bloqueio absorve primeiro,
-        o resto tira vida (secção 4.2 do relatório).
+        o resto tira vida (secção 4.2 do relatório). Alguns golpes
+        (ex.: Buffer Overflow) ignoram o bloqueio.
         """
         if self._vulnerable > 0:
             amount = int(amount * config.VULNERABLE_MULT)
-        absorbed = min(self._block, amount)
+        absorbed = 0 if ignore_block else min(self._block, amount)
         self._block -= absorbed
         lost = amount - absorbed
         self._hp = max(0, self._hp - lost)
@@ -123,9 +132,18 @@ class Character:
         return self.take_damage(amount)
 
     def end_turn(self):
-        """No fim do turno de cada um, os estados duram menos 1 turno."""
+        """
+        No fim do turno de cada um: o veneno tira vida (ignora o bloqueio) e
+        os estados duram menos 1 turno. Devolve uma mensagem se houve veneno.
+        """
+        mensagem = ""
+        if self._poison > 0:
+            self._hp = max(0, self._hp - config.POISON_DAMAGE)
+            self._poison -= 1
+            mensagem = f"{self._name} sofre {config.POISON_DAMAGE} de dano de veneno."
         self._vulnerable = max(0, self._vulnerable - 1)
         self._weak = max(0, self._weak - 1)
+        return mensagem
 
     def status_text(self):
         """Texto curto com os estados ativos, para mostrar no ecrã."""
@@ -134,6 +152,8 @@ class Character:
             partes.append(f"Vulnerável({self._vulnerable})")
         if self._weak:
             partes.append(f"Fraco({self._weak})")
+        if self._poison:
+            partes.append(f"Envenenado({self._poison})")
         return ", ".join(partes) if partes else "-"
 
 
@@ -181,6 +201,12 @@ class Player(Character):
     def restore_hp(self, hp):
         """Usado ao carregar uma run gravada (entre 1 e a vida máxima)."""
         self._hp = max(1, min(hp, self._max_hp))
+
+    def lose_hp(self, amount):
+        """Perda de vida directa (cartas e relíquias de risco). Nunca mata: deixa 1."""
+        perdido = max(0, min(amount, self._hp - 1))
+        self._hp -= perdido
+        return perdido
 
     # ---- energia ----
     def can_afford(self, cost):
@@ -230,8 +256,8 @@ class Player(Character):
 
     def heal_after_combat(self):
         """Recupera 10% da vida máxima (mais o que as relíquias derem)."""
-        extra = sum(r.heal_after_combat() for r in self._relics)
-        return self.heal(int(self._max_hp * config.HEAL_AFTER_FIGHT) + extra)
+        extra = sum(r.heal_after_combat() for r in self._relics)   # pode ser negativo
+        return self.heal(max(0, int(self._max_hp * config.HEAL_AFTER_FIGHT) + extra))
 
     # ---- redefinições (polimorfismo) ----
     def outgoing_damage(self, base):

@@ -15,7 +15,8 @@ import random
 import sys
 from collections import Counter
 
-from cards import AttackCard, DefenseCard, DebuffCard, BuffCard, HealCard, ParryCard, DrawCard
+from cards import (REFACTOR_OPTION, AttackCard, BuffCard, DebuffCard, DefenseCard,
+                   DrawCard, EnergyCard, HealCard, ParryCard)
 from game import Game
 from hall_of_fame import HallOfFame
 from modes import MODES
@@ -30,7 +31,7 @@ class NaiveBot:
     def show_state(self, player, enemy, turn): pass
 
     def choose_purchase(self, can_draw_deck):
-        opcoes = ["attack", "defense", "special"] + (["deck"] if can_draw_deck else [])
+        opcoes = ["attack", "defense"] + (["deck"] if can_draw_deck else [])
         return random.choice(opcoes)
 
     def choose_card(self, player, hand):
@@ -38,15 +39,21 @@ class NaiveBot:
         return max(pagaveis, key=lambda i: hand[i].cost) if pagaveis else None
 
     def choose_discard(self, hand): return 0
-    def choose_reward(self, options): return random.choice(options)
+    def choose_reward(self, options, can_upgrade=False):
+        return random.choice(options)
+    def choose_upgrade(self, pairs): return random.randrange(len(pairs))
     def choose_relic(self, options): return random.choice(options)
 
 
 class SmartBot(NaiveBot):
-    REWARD_ORDER = ["Firewall", "Kernel Panic", "Segfault", "Stack Overflow",
-                    "Catch & Return", "Try/Catch", "Fork Bomb", "Garbage Collector",
-                    "Ctrl+Z", "Debug Mode"]
-    RELIC_ORDER = ["Overclock", "Antivirus", "Macro", "Stack Trace", "Cache L1", "Backup"]
+    REWARD_ORDER = ["Firewall", "Kernel Panic", "Segfault", "Zombie Process",
+                    "Stack Overflow", "Catch & Return", "Buffer Overflow", "Try/Catch",
+                    "Fork Bomb", "Rate Limiter", "Infinite Loop", "Garbage Collector",
+                    "Ctrl+Z", "Debug Mode", "Sudo"]
+    UPGRADE_ORDER = ["Segfault", "Firewall", "Try/Catch", 'Print("Hit")', "If/Else",
+                     "Kernel Panic", "Zombie Process", "Catch & Return"]
+    RELIC_ORDER = ["Overclock", "Antivirus", "Linter", "Macro", "Stack Trace",
+                   "Auto-Save", "Cache L1", "Backup", "Overvolt", "Código Legado"]
 
     def __init__(self):
         self.player = self.enemy = None
@@ -66,7 +73,7 @@ class SmartBot(NaiveBot):
             return "defense"
         if can_draw_deck and len(hand) < 5:
             return "deck"
-        return random.choices(["attack", "defense", "special"], [0.45, 0.3, 0.25])[0]
+        return random.choices(["attack", "defense"], [0.6, 0.4])[0]
 
     def _pick(self, hand, player, kind):
         return [(i, c) for i, c in enumerate(hand)
@@ -90,9 +97,15 @@ class SmartBot(NaiveBot):
         heals = self._pick(hand, player, HealCard)
         if player.hp <= player.max_hp - 8 and heals:
             return heals[0][0]
-        debuffs = self._pick(hand, player, DebuffCard)
-        if e.vulnerable == 0 and e.hp > 20 and debuffs:
-            return debuffs[0][0]
+        # debuff só se o inimigo ainda não tem esse estado (e se vale a pena)
+        for i, c in self._pick(hand, player, DebuffCard):
+            if getattr(e, c.status) == 0 and e.hp > 20:
+                return i
+        # Sudo: energia barata, quando há cartas que não consigo pagar e a vida aguenta
+        energia = self._pick(hand, player, EnergyCard)
+        if (energia and player.hp > 30
+                and any(c.cost > player.energy for c in hand)):
+            return energia[0][0]
         draws = self._pick(hand, player, DrawCard)
         if draws and len(hand) <= 5:
             return draws[0][0]
@@ -112,12 +125,25 @@ class SmartBot(NaiveBot):
             return defs[0][0]
         return None
 
-    def choose_reward(self, options):
+    def choose_reward(self, options, can_upgrade=False):
+        """Fica com uma carta boa; se não houver nenhuma, faz REFACTOR."""
         nomes = {c.name: c for c in options}
+        for nome in self.REWARD_ORDER[:7]:
+            if nome in nomes:
+                return nomes[nome]
+        if can_upgrade:
+            return REFACTOR_OPTION
         for nome in self.REWARD_ORDER:
             if nome in nomes:
                 return nomes[nome]
         return options[0]
+
+    def choose_upgrade(self, pairs):
+        nomes = [antes.name for antes, _ in pairs]
+        for nome in self.UPGRADE_ORDER:
+            if nome in nomes:
+                return nomes.index(nome)
+        return 0
 
     def choose_relic(self, options):
         nomes = {r.name: r for r in options}

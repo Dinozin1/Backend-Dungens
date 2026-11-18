@@ -7,6 +7,7 @@ os mesmos métodos em pygame para ter a versão 2D. A versão colorida
 (ui_rich.py) herda desta classe e só redefine a parte visual.
 """
 import config
+from cards import REFACTOR_OPTION
 from modes import MODES
 
 
@@ -58,11 +59,14 @@ class TextUI:
 COMO JOGAR
 - Percorres 10 salas (modo normal) ou 5 (modo rápido); na última está o boss.
 - Cada turno: compras 1 carta e depois jogas as que quiseres. Podes comprar:
-  básica de ataque, básica de defesa, ESPECIAL aleatória (aposta!) ou do teu BARALHO.
+  básica de ataque, básica de defesa ou uma carta do teu BARALHO (onde estão as
+  cartas especiais que foste ganhando como recompensa).
 - A ENERGIA não se perde no fim do turno: podes poupar para jogadas fortes
   (ganhas +{config.ENERGY_PER_TURN} por turno, máximo {config.MAX_ENERGY}).
 - O BLOQUEIO e o PARRY desaparecem no início do teu turno.
-- Mão máxima: {config.HAND_LIMIT} cartas. Depois de cada combate escolhes 1 carta entre 3.
+- Mão máxima: {config.HAND_LIMIT} cartas.
+- Depois de cada combate: 1 carta entre 3 OU REFACTOR (melhora uma carta, ex.: Segfault -> Segfault+).
+- Há cartas e relíquias de RISCO: muito poder, mas com um preço. Veneno ignora o bloqueio.
 - RELÍQUIAS: em certas salas escolhes 1 de 2; mudam as regras até ao fim da run.
 - Depois do turno {config.ENRAGE_TURN} os inimigos enfurecem-se (+1 de dano por turno).
 - O boss esconde as ações, mas segue um padrão. Observa o histórico!
@@ -107,13 +111,11 @@ COMO JOGAR
         print("\nCompra do turno (escolhe 1):")
         print(' 1) Carta básica de ATAQUE   - Print("Hit")')
         print(" 2) Carta básica de DEFESA   - If/Else")
-        print(" 3) Carta ESPECIAL aleatória (aposta: pode ser ótima ou inútil)")
-        validas = ["1", "2", "3"]
+        validas = ["1", "2"]
         if can_draw_deck:
-            print(" 4) Carta do teu BARALHO     (o que construíste na run)")
-            validas.append("4")
-        return {"1": "attack", "2": "defense", "3": "special", "4": "deck"}[
-            self._ask("> ", validas)]
+            print(" 3) Carta do teu BARALHO     (o que construíste na run)")
+            validas.append("3")
+        return {"1": "attack", "2": "defense", "3": "deck"}[self._ask("> ", validas)]
 
     def choose_card(self, player, hand):
         """Devolve o índice da carta a jogar, ou None para terminar o turno."""
@@ -133,15 +135,36 @@ COMO JOGAR
         validas = [str(i) for i in range(1, len(hand) + 1)]
         return int(self._ask("> ", validas)) - 1
 
-    def choose_reward(self, options):
-        """Escolhe 1 carta entre as opções (ou nenhuma). Devolve a carta ou None."""
+    def choose_reward(self, options, can_upgrade=False):
+        """
+        Recompensa de fim de combate. Devolve uma Carta (nova no baralho),
+        REFACTOR_OPTION (melhorar uma carta que já tens) ou None (nada).
+        """
         print("\nRecompensa! Escolhe uma carta para o baralho:")
         for i, carta in enumerate(options, 1):
             print(f" {i}) {carta}")
-        print(" 0) Nenhuma (mantém o baralho pequeno)")
         validas = ["0"] + [str(i) for i in range(1, len(options) + 1)]
+        refactor = str(len(options) + 1)
+        if can_upgrade:
+            print(f" {refactor}) REFACTOR: melhora uma carta do teu baralho")
+            validas.append(refactor)
+        print(" 0) Nenhuma (mantém o baralho pequeno)")
+        escolha = self._ask("> ", validas)
+        if escolha == "0":
+            return None
+        if can_upgrade and escolha == refactor:
+            return REFACTOR_OPTION
+        return options[int(escolha) - 1]
+
+    def choose_upgrade(self, pairs):
+        """pairs = [(carta atual, carta melhorada)]. Devolve o índice ou None (voltar)."""
+        print("\nREFACTOR - que carta queres melhorar?")
+        for i, (antes, depois) in enumerate(pairs, 1):
+            print(f" {i}) {antes}\n      => {depois}")
+        print(" 0) Voltar atrás")
+        validas = ["0"] + [str(i) for i in range(1, len(pairs) + 1)]
         escolha = int(self._ask("> ", validas))
-        return None if escolha == 0 else options[escolha - 1]
+        return None if escolha == 0 else escolha - 1
 
     def choose_relic(self, options):
         """Escolhe 1 relíquia (obrigatório). Devolve a relíquia."""

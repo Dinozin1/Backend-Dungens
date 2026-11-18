@@ -6,7 +6,7 @@ Assim a lógica fica separada da interface e podemos trocar texto por 2D
 sem reescrever o combate (e testar com bots, ver simulate.py).
 """
 import config
-from cards import BASIC_ATTACK, BASIC_DEFENSE, make_card, random_special
+from cards import BASIC_ATTACK, BASIC_DEFENSE, make_card
 
 
 class Battle:
@@ -35,8 +35,12 @@ class Battle:
             if not self._enemy.is_alive:
                 self._ui.message(f"\n{self._enemy.name} foi derrotado!")
                 return True
-            self._player.end_turn()                                  # 5. fim do turno
-            self._enemy_turn()
+            self._end_player_turn()                                  # 5. fim do turno
+            if self._player.is_alive:
+                self._enemy_turn()
+            if not self._enemy.is_alive:           # o veneno também pode matar
+                self._ui.message(f"\n{self._enemy.name} foi derrotado!")
+                return True
             if not self._player.is_alive:
                 self._ui.message("\nA tua vida chegou a 0. Sistema comprometido...")
                 return False
@@ -44,9 +48,10 @@ class Battle:
     # ---- passos do turno ----
     def _buy_card(self):
         """
-        Compra de 1 carta (secção 4.3), com 4 opções: básica de ataque, básica
-        de defesa, especial aleatória, ou uma carta do teu BARALHO (assim as
-        recompensas que escolheste durante a run fazem mesmo diferença).
+        Compra de 1 carta (secção 4.3), com 3 opções: básica de ataque, básica
+        de defesa, ou uma carta do teu BARALHO. As cartas especiais (cura, buff,
+        parry...) chegam ao baralho pelas recompensas, por isso o que escolhes
+        durante a run faz mesmo diferença.
         """
         deck = self._player.deck
         while True:
@@ -63,9 +68,9 @@ class Battle:
             elif escolha == "defense":
                 carta = make_card(BASIC_DEFENSE)
                 deck.add_to_hand(carta)
-            else:
-                carta = random_special()
-                deck.add_to_hand(carta)
+            else:                                 # escolha desconhecida: pergunta outra vez
+                self._ui.message("Escolha de compra inválida.")
+                continue
             break
         self._ui.message(f"Compraste: {carta}")
         self._enforce_hand_limit()
@@ -92,11 +97,18 @@ class Battle:
             self._player.notify_card_played(carta)   # as relíquias reagem
             self._enforce_hand_limit()
 
+    def _end_player_turn(self):
+        mensagem = self._player.end_turn()
+        if mensagem:
+            self._ui.message(mensagem)
+
     def _enemy_turn(self):
         self._enemy.reset_block()
         for linha in self._enemy.act(self._player):
             self._ui.message(linha)
-        self._enemy.end_turn()
+        mensagem = self._enemy.end_turn()      # inclui o veneno
+        if mensagem:
+            self._ui.message(mensagem)
 
     def _enforce_hand_limit(self):
         """Mão acima do limite: o jogador descarta uma carta à escolha."""

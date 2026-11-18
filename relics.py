@@ -7,6 +7,8 @@ sem saber quais são (polimorfismo).
 """
 import random
 
+from cards import DefenseCard
+
 
 class Relic:
     """Base: todos os ganchos não fazem nada por omissão."""
@@ -38,7 +40,7 @@ class Relic:
         return 0
 
     def heal_after_combat(self):
-        """Vida extra recuperada no fim de cada combate."""
+        """Vida extra recuperada no fim de cada combate (pode ser negativa)."""
         return 0
 
     def __str__(self):
@@ -89,7 +91,7 @@ class Macro(Relic):
     """Tem estado próprio: conta as cartas jogadas no combate."""
 
     def __init__(self):
-        super().__init__("Macro", "A cada 5 cartas jogadas no combate, ganhas +1 energia")
+        super().__init__("Macro", "A cada 5 cartas jogadas no combate, ganhas +3 energia")
         self._played = 0
 
     def on_combat_start(self, player):
@@ -98,12 +100,58 @@ class Macro(Relic):
     def on_card_played(self, player, card):
         self._played += 1
         if self._played % 5 == 0:
-            player.gain_energy(1)
+            player.gain_energy(3)
+
+
+class Linter(Relic):
+    """Reage ao TIPO da carta jogada (só as de defesa contam)."""
+
+    def __init__(self):
+        super().__init__("Linter", "Cada carta de defesa jogada dá +2 de bloqueio extra")
+
+    def on_card_played(self, player, card):
+        if isinstance(card, DefenseCard):
+            player.gain_block(2)
+
+
+class AutoSave(Relic):
+    def __init__(self):
+        super().__init__("Auto-Save", "Recuperas 2 de vida no início de cada turno")
+
+    def on_turn_start(self, player):
+        player.heal(2)
+
+
+# --- Relíquias de RISCO (poder grande, com preço) ---
+class Overvolt(Relic):
+    def __init__(self):
+        super().__init__("Overvolt",
+                         "RISCO: +2 energia por turno, mas começas cada combate com -5 de vida")
+
+    def on_combat_start(self, player):
+        player.lose_hp(5)
+
+    def on_turn_start(self, player):
+        player.gain_energy(2)
+
+
+class LegacyCode(Relic):
+    def __init__(self):
+        super().__init__("Código Legado",
+                         "RISCO: +3 de dano em todos os golpes, mas deixas de recuperar vida após os combates")
+
+    def attack_bonus(self):
+        return 3
+
+    def heal_after_combat(self):
+        return -999            # anula toda a cura de fim de combate
 
 
 RELIC_FACTORIES = {
     "Overclock": Overclock, "Antivirus": Antivirus, "Cache L1": CacheL1,
     "Stack Trace": StackTrace, "Backup": Backup, "Macro": Macro,
+    "Linter": Linter, "Auto-Save": AutoSave,
+    "Overvolt": Overvolt, "Código Legado": LegacyCode,
 }
 
 

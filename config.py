@@ -18,6 +18,8 @@ HEAL_AFTER_FIGHT = 0.10     # recupera 10% da vida máxima no fim de cada combat
 # --- Anti-impasse ---
 ENRAGE_TURN = 12            # depois deste turno o inimigo ganha +1 de dano por turno
 
+POISON_DAMAGE = 3           # veneno: dano por turno (ignora o bloqueio)
+
 # --- Estados (secção 4.2) ---
 VULNERABLE_MULT = 1.5       # vulnerável: +50% de dano recebido
 WEAK_MULT = 0.75            # fraqueza: -25% de dano causado

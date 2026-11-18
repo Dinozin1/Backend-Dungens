@@ -5,7 +5,7 @@ import random
 
 import config
 from battle import Battle
-from cards import REWARD_POOL, make_card
+from cards import REFACTOR_OPTION, REWARD_POOL, UPGRADES, make_card
 from characters import Player
 from deck import Deck
 from enemies import spawn_enemy
@@ -85,14 +85,27 @@ class Game:
         self._finish_run(player, mode, rooms_cleared, total_turns, won)
 
     def _give_reward(self, player):
-        """1 carta entre 3 (sem repetir) para juntar ao baralho."""
+        """
+        Fim do combate: 1 carta entre 3 para juntar ao baralho, OU um REFACTOR
+        (melhorar uma carta que já tens), OU nada.
+        """
         opcoes = [make_card(n) for n in
                   random.sample(REWARD_POOL, config.REWARD_CHOICES)]
-        escolhida = self._ui.choose_reward(opcoes)
-        if escolhida is not None:
-            player.deck.add_card(escolhida)
-            self._ui.message(f"{escolhida.name} entrou no baralho "
-                             f"({len(player.deck)} cartas).")
+        while True:
+            nomes = player.deck.upgradable_names()
+            escolha = self._ui.choose_reward(opcoes, can_upgrade=bool(nomes))
+            if escolha == REFACTOR_OPTION:
+                pares = [(make_card(n), make_card(UPGRADES[n])) for n in nomes]
+                indice = self._ui.choose_upgrade(pares)
+                if indice is None:                 # voltou atrás: mostra o menu outra vez
+                    continue
+                nova = player.deck.upgrade_card(nomes[indice])
+                self._ui.message(f"REFACTOR: {nomes[indice]} passou a {nova.name}!")
+            elif escolha is not None:
+                player.deck.add_card(escolha)
+                self._ui.message(f"{escolha.name} entrou no baralho "
+                                 f"({len(player.deck)} cartas).")
+            return
 
     def _give_relic(self, player):
         """Oferece 2 relíquias que ainda não tens (se houver) e escolhe 1."""

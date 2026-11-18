@@ -6,6 +6,8 @@ são listas de objetos Card.
 """
 import random
 
+from cards import UPGRADES, make_card
+
 
 class Deck:
     def __init__(self, cards):
@@ -42,6 +44,24 @@ class Deck:
     # ---- construção do baralho (recompensas) ----
     def add_card(self, card):
         self._cards.append(card)
+
+    def upgradable_names(self):
+        """Nomes (sem repetir) das cartas do baralho que ainda se podem melhorar."""
+        nomes = []
+        for carta in self._cards:
+            if carta.name in UPGRADES and carta.name not in nomes:
+                nomes.append(carta.name)
+        return nomes
+
+    def upgrade_card(self, name):
+        """REFACTOR: troca UMA carta com este nome pela versão melhorada."""
+        if name not in UPGRADES:
+            raise ValueError(f"{name} não se pode melhorar")
+        for i, carta in enumerate(self._cards):
+            if carta.name == name:
+                self._cards[i] = make_card(UPGRADES[name])
+                return self._cards[i]
+        raise ValueError(f"{name} não está no baralho")
 
     # ---- combate ----
     def start_combat(self):

@@ -10,18 +10,28 @@
     "name": "Tiago",
     "score": 150,
     "rooms": 2,
-    "won": false
+    "won": false,
+    "mode": "normal"
   },
   {
     "name": "coco",
     "score": 748,
     "rooms": 9,
-    "won": false
+    "won": false,
+    "mode": "normal"
   },
   {
     "name": "Nigga",
     "score": 792,
     "rooms": 9,
-    "won": false
+    "won": false,
+    "mode": "normal"
+  },
+  {
+    "name": "Dino",
+    "score": 1002,
+    "rooms": 5,
+    "won": true,
+    "mode": "curto"
   }
 ]
