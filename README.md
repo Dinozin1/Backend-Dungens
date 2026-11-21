@@ -13,7 +13,7 @@ pip install rich        # opcional (menus, mão, recompensas e recordes a cores)
 python main.py          # jogar (usa cores se o rich estiver instalado)
 python main.py --plain  # forçar o modo texto simples
 
-python -m unittest discover -s tests -t .   # 174 testes automáticos
+python -m unittest discover -s tests -t .   # testes automáticos
 python simulate.py                          # simula 300 runs por bot e por modo
 ```
 
@@ -114,15 +114,13 @@ Todos os valores de equilíbrio estão em `config.py`, `modes.py` e no topo de `
 | `ui.py` / `ui_rich.py` | `RunUI` e `GameUI` (abstratas: o contrato), `TextUI` (texto) e `RichUI` (cores, tabelas e painéis): toda a interface, separada da lógica |
 | `game.py` | `Game`: menu e ciclo da run |
 | `simulate.py` | Bots para validar o equilíbrio |
-| `tests/` | 136 testes `unittest` (um por regra) |
-| `PLAYTEST.md` | Folha para a equipa registar o playtest humano |
-| `GUIA_BANCA.md` | Guia de preparação para a banca (perguntas prováveis por módulo) |
+| `tests/` | Testes automáticos `unittest` (um por regra) |
 
 ## Requisitos da disciplina
 - **R1**: mais de 4 classes próprias; atributos `_hp`, `_energy`, `_block`... só mudam por métodos (propriedades só de leitura cá fora).
 - **R2**: `Card` (abstrata) com 11 subclasses que redefinem `_effect()` (o `play()` é um template method que aplica depois os ganchos da mutação; algumas herdam de outras: `PiercingAttackCard` e `RecoilAttackCard` herdam de `AttackCard`); `Enemy` (abstrata) com 10 subclasses que redefinem `choose_action()`; `Intent` (abstrata) com 8 subclasses que redefinem `describe()` e `execute()`; `Relic` com 15 subclasses e `Mutation` com 7, que redefinem ganchos; `Player` redefine `receive_attack()` e `outgoing_damage()`; `RunUI` (abstrata) é implementada pela `TextUI`, pelo `RichUI`, pelos bots e pelo `RoomRecorder` (decorator); `GameUI` acrescenta os menus; `RichUI` herda de `TextUI` e redefine só os métodos `_show_*` (template method).
 - **R3**: baralho, mão e descarte são listas de `Card`; recordes em `scores.json` e run gravada em `save.json` (início da sala, semente e respostas), ambos lidos e escritos.
-- **R4**: entradas inválidas são repetidas; energia insuficiente é recusada; ficheiros de recordes ou de gravação em falta, corrompidos ou adulterados não rebentam o jogo; os ficheiros são escritos de forma atómica (um corte a meio não os estraga); nomes impróprios são recusados (e ignorados se vierem de um ficheiro editado); começar uma run nova com uma gravação existente pede confirmação; README, diagrama e 136 testes.
+- **R4**: entradas inválidas são repetidas; energia insuficiente é recusada; ficheiros de recordes ou de gravação em falta, corrompidos ou adulterados não rebentam o jogo; os ficheiros são escritos de forma atómica (um corte a meio não os estraga); nomes impróprios são recusados (e ignorados se vierem de um ficheiro editado); começar uma run nova com uma gravação existente pede confirmação; README, diagrama e testes automáticos.
 
 ## Diagrama de classes
 ```mermaid
@@ -276,6 +274,6 @@ classDiagram
 
 ## Declaração de uso de IA
 Código gerado com o Claude (Anthropic) a partir do relatório do jogo e da retrospetiva
-da equipa. Verificação: 174 testes automáticos, simulação de milhares de runs com bots
+da equipa. Verificação: testes automáticos, simulação de milhares de runs com bots
 (que apanhou um impasse real e levou ao mecanismo de "enfurecer"), e testes manuais na
 consola. **A equipa deve rever e perceber todas as classes antes da banca.**
