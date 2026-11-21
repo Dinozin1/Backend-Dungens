@@ -1,29 +1,2 @@
 {
-  "name": "Dino",
-  "hp": 60,
-  "cards": [
-    "Print(\"Hit\")",
-    "Print(\"Hit\")",
-    "Print(\"Hit\")",
-    "Print(\"Hit\")",
-    "If/Else",
-    "If/Else",
-    "If/Else",
-    "If/Else",
-    "Segfault",
-    "Try/Catch"
-  ],
-  "relics": [],
-  "mode": "normal",
-  "next_room": 1,
-  "total_turns": 0,
-  "seed": 2748875258,
-  "log": [
-    "deck",
-    0,
-    4,
-    1,
-    null,
-    "deck"
-  ]
 }
