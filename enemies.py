@@ -2,17 +2,20 @@
 enemies.py - Inimigos e as suas "intenções".
 
 R2: Enemy é uma classe abstrata com choose_action(turn). Cada subclasse
-(Bug, Virus, RaceCondition, MemoryLeak, Trojan, Boss) redefine-o com o seu
+(Bug, Virus, RaceCondition, MemoryLeak, Trojan, Worm, Adware, Keylogger,
+Ransomware, Boss) redefine-o com o seu
 próprio padrão. O Boss redefine ainda describe_intent(), act() e _start_hp().
 Intent também é uma classe abstrata: AttackIntent, DefendIntent, WeakenIntent,
-ExposeIntent e HealIntent redefinem describe() e execute().
+ExposeIntent, HealIntent, PoisonIntent, DrainIntent e SpamIntent redefinem describe()
+e execute().
 """
-import random
 from abc import ABC, abstractmethod
 
 import config
+from cards import SPAM, make_card
 from characters import Character
 from modes import DEFAULT_MODE, get_mode
+from rng import rng
 
 
 class Intent(ABC):
@@ -111,6 +114,42 @@ class HealIntent(Intent):
     def execute(self, enemy, player):
         curado = enemy.heal(self._value)
         return [f"{enemy.name} cura-se {curado} de vida."]
+
+
+class PoisonIntent(Intent):
+    kind, SHORT = "poison", "Veneno"
+
+    def describe(self):
+        return (f"vai ENVENENAR-te ({self._value} turnos, "
+                f"{config.POISON_DAMAGE} de dano por turno, ignora o bloqueio)")
+
+    def execute(self, enemy, player):
+        player.apply_status("poison", self._value)
+        return [f"{enemy.name} envenena-te durante {self._value} turnos!"]
+
+
+class DrainIntent(Intent):
+    kind, SHORT = "drain", "Roubar"
+
+    def describe(self):
+        return f"vai ROUBAR-te {self._value} de energia (guardada)"
+
+    def execute(self, enemy, player):
+        roubada = min(self._value, player.energy)
+        player.spend_energy(roubada)
+        return [f"{enemy.name} rouba-te {roubada} de energia."]
+
+
+class SpamIntent(Intent):
+    kind, SHORT = "spam", "Spam"
+
+    def describe(self):
+        return f"vai ENCHER-te o descarte de lixo ({self._value} cartas Spam)"
+
+    def execute(self, enemy, player):
+        for _ in range(self._value):
+            player.deck.add_to_discard(make_card(SPAM))
+        return [f"{enemy.name} enche o teu descarte com {self._value} cartas Spam."]
 
 
 class Enemy(Character, ABC):
@@ -236,6 +275,57 @@ class Trojan(Enemy):
         return self._attack(1.4)
 
 
+class Worm(Enemy):
+    """Três golpes fracos de cada vez (o parry só anula um!); de 4 em 4 turnos defende."""
+    NAME = "Worm"
+    BASE_HP = 16
+    MIN_LEVEL = 3
+
+    def choose_action(self, turn):
+        if turn % 4 == 0:
+            return DefendIntent(self.damage + 2)
+        return self._attack(0.6, hits=3)
+
+
+class Keylogger(Enemy):
+    """Envenena-te (dano que o bloqueio não trava) e depois ataca."""
+    NAME = "Keylogger"
+    BASE_HP = 22
+    MIN_LEVEL = 5
+
+    def choose_action(self, turn):
+        if turn % 3 == 1:
+            return PoisonIntent(3)
+        return self._attack()
+
+
+class Adware(Enemy):
+    """Enche o teu descarte de Spam e ataca; o baralho engorda com lixo durante o combate."""
+    NAME = "Adware"
+    BASE_HP = 20
+    MIN_LEVEL = 4
+
+    def choose_action(self, turn):
+        if turn % 2 == 1:
+            return SpamIntent(2)
+        return self._attack(1.2)
+
+
+class Ransomware(Enemy):
+    """Rouba a energia que guardaste, depois bate forte e defende."""
+    NAME = "Ransomware"
+    BASE_HP = 26
+    MIN_LEVEL = 6
+
+    def choose_action(self, turn):
+        fase = turn % 3
+        if fase == 1:
+            return DrainIntent(2)
+        if fase == 2:
+            return self._attack(1.5)
+        return DefendIntent(self.damage + 3)
+
+
 class Boss(Enemy):
     """
     O boss final. As ações estão ESCONDIDAS, mas seguem um padrão que se
@@ -291,4 +381,4 @@ def spawn_enemy(room, mode=None):
         return Boss(room, mode)
     nivel = mode.difficulty_room(room)
     tipos = [t for t in Enemy.__subclasses__() if t.SPAWNS and nivel >= t.MIN_LEVEL]
-    return random.choice(tipos)(room, mode)
+    return rng.choice(tipos)(room, mode)

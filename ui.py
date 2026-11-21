@@ -17,7 +17,7 @@ resposta; as subclasses redefinem só o _show_*, a validação (R4) fica igual.
 from abc import ABC, abstractmethod
 
 import config
-from cards import BASIC_ATTACK, BASIC_DEFENSE, REFACTOR_OPTION
+from cards import BASIC_ATTACK, BASIC_DEFENSE, MUTATE_OPTION, REFACTOR_OPTION
 from modes import MODES
 from names import is_acceptable_name
 
@@ -58,12 +58,19 @@ class RunUI(ABC):
         """Devolve o índice da carta a descartar."""
 
     @abstractmethod
-    def choose_reward(self, options, can_upgrade=False):
-        """Devolve uma Carta, REFACTOR_OPTION (se can_upgrade) ou None (nada)."""
+    def choose_reward(self, options, can_upgrade=False, mutation=None):
+        """
+        Devolve uma Carta, REFACTOR_OPTION (se can_upgrade), MUTATE_OPTION (só se
+        'mutation' não for None: é a mutação oferecida) ou None (nada).
+        """
 
     @abstractmethod
     def choose_upgrade(self, pairs):
         """pairs = [(carta atual, carta melhorada)]. Devolve o índice ou None (voltar)."""
+
+    @abstractmethod
+    def choose_mutation_target(self, mutation, pairs):
+        """pairs = [(carta atual, carta já mutada)]. Devolve o índice ou None (voltar)."""
 
     @abstractmethod
     def choose_relic(self, options):
@@ -153,8 +160,10 @@ class TextUI(GameUI):
   (ganhas +{config.ENERGY_PER_TURN} por turno, máximo {config.MAX_ENERGY}).
 - O BLOQUEIO e o PARRY desaparecem no início do teu turno.
 - Mão máxima: {config.HAND_LIMIT} cartas.
-- Depois de cada combate: 1 carta entre 3 OU REFACTOR (melhora uma carta, ex.: Segfault -> Segfault+).
+- Depois de cada combate: 1 carta entre 3, OU REFACTOR (melhora uma carta, ex.: Segfault -> Segfault+),
+  OU uma MUTAÇÃO (uma carta ganha um efeito novo, sempre com um preço; só uma por carta).
 - Há cartas e relíquias de RISCO: muito poder, mas com um preço. Veneno ignora o bloqueio.
+- Cuidado com os inimigos: alguns envenenam-te, roubam a energia que guardaste ou enchem o descarte de Spam.
 - RELÍQUIAS: em certas salas escolhes 1 de 2; mudam as regras até ao fim da run.
 - Depois do turno {config.ENRAGE_TURN} os inimigos enfurecem-se (+1 de dano por turno).
 - O boss esconde as ações, mas segue um padrão. Observa o histórico!
@@ -232,27 +241,51 @@ class TextUI(GameUI):
         validas = [str(i) for i in range(1, len(hand) + 1)]
         return int(self._ask("> ", validas)) - 1
 
-    def _show_reward(self, options, can_upgrade):
+    @staticmethod
+    def _reward_numbers(options, can_upgrade, mutation):
+        """Números das opções especiais do menu (None se não estão disponíveis)."""
+        proximo = len(options) + 1
+        refactor = proximo if can_upgrade else None
+        mutar = proximo + (1 if can_upgrade else 0) if mutation is not None else None
+        return refactor, mutar
+
+    def _show_reward(self, options, can_upgrade, mutation=None):
         print("\nRecompensa! Escolhe uma carta para o baralho:")
         for i, carta in enumerate(options, 1):
             print(f" {i}) {carta}")
-        if can_upgrade:
-            print(f" {len(options) + 1}) REFACTOR: melhora uma carta do teu baralho")
+        refactor, mutar = self._reward_numbers(options, can_upgrade, mutation)
+        if refactor:
+            print(f" {refactor}) REFACTOR: melhora uma carta do teu baralho")
+        if mutar:
+            print(f" {mutar}) MUTAÇÃO ({mutation}) numa carta do teu baralho")
         print(" 0) Nenhuma (mantém o baralho pequeno)")
 
-    def choose_reward(self, options, can_upgrade=False):
-        """Recompensa de fim de combate: Carta, REFACTOR_OPTION ou None (nada)."""
-        self._show_reward(options, can_upgrade)
+    def choose_reward(self, options, can_upgrade=False, mutation=None):
+        """Recompensa de fim de combate: Carta, REFACTOR_OPTION, MUTATE_OPTION ou None."""
+        self._show_reward(options, can_upgrade, mutation)
+        refactor, mutar = self._reward_numbers(options, can_upgrade, mutation)
         validas = ["0"] + [str(i) for i in range(1, len(options) + 1)]
-        refactor = str(len(options) + 1)
-        if can_upgrade:
-            validas.append(refactor)
+        validas += [str(n) for n in (refactor, mutar) if n]
         escolha = self._ask("> ", validas)
         if escolha == "0":
             return None
-        if can_upgrade and escolha == refactor:
+        if refactor and escolha == str(refactor):
             return REFACTOR_OPTION
+        if mutar and escolha == str(mutar):
+            return MUTATE_OPTION
         return options[int(escolha) - 1]
+
+    def _show_mutation_target(self, mutation, pairs):
+        print(f"\nMUTAÇÃO ({mutation}) - em que carta?")
+        for i, (antes, depois) in enumerate(pairs, 1):
+            print(f" {i}) {antes}\n      => {depois}")
+        print(" 0) Voltar atrás")
+
+    def choose_mutation_target(self, mutation, pairs):
+        self._show_mutation_target(mutation, pairs)
+        validas = ["0"] + [str(i) for i in range(1, len(pairs) + 1)]
+        escolha = int(self._ask("> ", validas))
+        return None if escolha == 0 else escolha - 1
 
     def _show_upgrades(self, pairs):
         print("\nREFACTOR - que carta queres melhorar?")

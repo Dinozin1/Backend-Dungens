@@ -14,6 +14,7 @@ from hall_of_fame import HallOfFame
 from relics import make_relic
 from savegame import SaveGame
 from simulate import NaiveBot
+from rng import rng
 
 
 def new_player(*cards, relics=()):
@@ -119,13 +120,14 @@ class TestRefactor(unittest.TestCase):
         """Escolher REFACTOR e depois a carta: o baralho fica com a versão melhorada."""
         class RefactorUI(NaiveBot):
             calls = 0
-            def choose_reward(self, options, can_upgrade=False):
+            def choose_reward(self, options, can_upgrade=False, mutation=None):
                 RefactorUI.calls += 1
                 return REFACTOR_OPTION
             def choose_upgrade(self, pairs):
                 # 1.ª vez volta atrás (None); 2.ª escolhe o primeiro
                 return None if RefactorUI.calls == 1 else 0
         random.seed(3)
+        rng.seed(3)
         p = new_player("Segfault", "If/Else")
         Game(ui=RefactorUI(), hall=HallOfFame(None), save=SaveGame(None))._give_reward(p)
         self.assertEqual(RefactorUI.calls, 2)        # voltou ao menu e tentou outra vez

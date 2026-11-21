@@ -4,9 +4,11 @@ import unittest
 import config
 from characters import Player
 from deck import Deck
-from enemies import (Boss, Bug, Enemy, Intent, MemoryLeak, RaceCondition,
-                     Trojan, Virus, spawn_enemy)
+from cards import SPAM, make_card
+from enemies import (Adware, Boss, Bug, Enemy, Intent, Keylogger, MemoryLeak,
+                     RaceCondition, Ransomware, Trojan, Virus, Worm, spawn_enemy)
 from modes import MODES, get_mode
+from rng import rng
 
 
 class TestModes(unittest.TestCase):
@@ -110,15 +112,89 @@ class TestIntents(unittest.TestCase):
         self.assertEqual(p.hp, p.max_hp)
 
 
+class TestNewEnemies(unittest.TestCase):
+    def setUp(self):
+        self.p = Player("T", Deck([make_card("If/Else") for _ in range(10)]))
+        self.p.start_combat()
+
+    def test_worm_hits_three_times_and_defends_every_fourth_turn(self):
+        w = Worm(5)
+        w.plan(1)
+        self.assertEqual((w.intent.kind, w.intent.hits), ("attack", 3))
+        self.assertEqual(len(w.act(self.p)), 3)
+        w.plan(4)
+        self.assertEqual(w.intent.kind, "defend")
+
+    def test_keylogger_poison_ignores_block_and_ticks_at_end_of_turn(self):
+        k = Keylogger(6)
+        k.plan(1)
+        self.assertEqual(k.intent.kind, "poison")
+        k.act(self.p)
+        self.assertEqual(self.p.poison, 3)
+        self.p.gain_block(50)
+        self.assertIn("veneno", self.p.end_turn())
+        self.assertEqual((self.p.hp, self.p.block), (self.p.max_hp - 3, 50))
+        k.plan(2)
+        self.assertEqual(k.intent.kind, "attack")
+
+    def test_adware_fills_the_discard_with_spam(self):
+        a = Adware(6)
+        a.plan(1)
+        antes = self.p.deck.discard_size
+        a.act(self.p)
+        self.assertEqual(self.p.deck.discard_size, antes + 2)
+        self.assertTrue(all(c.name == SPAM for c in list(self.p.deck._discard)[-2:]))
+        self.p.deck.start_combat()                    # o lixo some no fim do combate
+        self.assertEqual(len(self.p.deck), 10)
+        self.assertEqual(self.p.deck.draw_pile_size, 10)
+
+    def test_ransomware_drains_saved_energy_but_never_below_zero(self):
+        r = Ransomware(8)
+        r.plan(1)
+        self.assertEqual(r.intent.kind, "drain")
+        self.p.spend_energy(self.p.energy - 1)       # só sobra 1 de energia
+        r.act(self.p)
+        self.assertEqual(self.p.energy, 0)           # rouba 1, não 2: nunca fica negativa
+        self.p.spend_energy(self.p.energy)
+        r.act(self.p)
+        self.assertEqual(self.p.energy, 0)
+        r.plan(2)
+        self.assertEqual(r.intent.kind, "attack")
+        r.plan(3)
+        self.assertEqual(r.intent.kind, "defend")
+
+    def test_drain_takes_exactly_two_when_there_is_enough(self):
+        r = Ransomware(8)
+        r.plan(1)
+        antes = self.p.energy
+        r.act(self.p)
+        self.assertEqual(self.p.energy, antes - 2)
+
+    def test_every_new_intent_describes_itself(self):
+        for classe in Intent.__subclasses__():
+            self.assertTrue(classe(2).describe())
+            self.assertTrue(classe(2).short())
+
+
 class TestSpawn(unittest.TestCase):
     def test_new_enemies_only_appear_at_their_min_level(self):
         import random
         random.seed(1)
+        rng.seed(1)
         cedo = {type(spawn_enemy(1)) for _ in range(60)}
         self.assertEqual(cedo, {Bug, Virus})
-        tarde = {type(spawn_enemy(9)) for _ in range(200)}
+        tarde = {type(spawn_enemy(9)) for _ in range(400)}
         self.assertIn(MemoryLeak, tarde)
         self.assertNotIn(Boss, tarde)
+        self.assertTrue({Worm, Adware, Keylogger, Ransomware} <= tarde)
+
+    def test_min_levels_are_respected(self):
+        rng.seed(2)
+        nivel_2 = {type(spawn_enemy(2)) for _ in range(200)}       # sala 2 do modo normal
+        self.assertTrue(nivel_2 <= {Bug, Virus})
+        nivel_4 = {type(spawn_enemy(4)) for _ in range(300)}
+        self.assertNotIn(Ransomware, nivel_4)
+        self.assertNotIn(Keylogger, nivel_4)
 
 
 if __name__ == "__main__":

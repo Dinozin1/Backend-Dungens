@@ -15,8 +15,8 @@ import random
 import sys
 from collections import Counter
 
-from cards import (REFACTOR_OPTION, AttackCard, BuffCard, DebuffCard, DefenseCard,
-                   DrawCard, EnergyCard, HealCard, ParryCard)
+from cards import (MUTATE_OPTION, REFACTOR_OPTION, AttackCard, BuffCard, DebuffCard,
+                   DefenseCard, DrawCard, EnergyCard, HealCard, ParryCard)
 from game import Game
 from hall_of_fame import HallOfFame
 from modes import MODES
@@ -41,9 +41,10 @@ class NaiveBot(RunUI):
         return max(pagaveis, key=lambda i: hand[i].cost) if pagaveis else None
 
     def choose_discard(self, hand): return 0
-    def choose_reward(self, options, can_upgrade=False):
+    def choose_reward(self, options, can_upgrade=False, mutation=None):
         return random.choice(options)
     def choose_upgrade(self, pairs): return random.randrange(len(pairs))
+    def choose_mutation_target(self, mutation, pairs): return random.randrange(len(pairs))
     def choose_relic(self, options): return random.choice(options)
 
 
@@ -54,8 +55,10 @@ class SmartBot(NaiveBot):
                     "Ctrl+Z", "Debug Mode", "Sudo"]
     UPGRADE_ORDER = ["Segfault", "Firewall", "Try/Catch", 'Print("Hit")', "If/Else",
                      "Kernel Panic", "Zombie Process", "Catch & Return"]
-    RELIC_ORDER = ["Overclock", "Antivirus", "Linter", "Macro", "Stack Trace",
-                   "Auto-Save", "Cache L1", "Backup", "Overvolt", "Código Legado"]
+    RELIC_ORDER = ["Overclock", "Antivirus", "Stack Canary", "Linter", "Macro",
+                   "Honeypot", "Stack Trace", "Defrag", "Watchdog", "Auto-Save",
+                   "Cache L1", "Backup", "Overvolt", "Modo Seguro", "Código Legado"]
+    GOOD_MUTATIONS = ("Blindado", "Vampírico", "Infectado", "Efémero")
 
     def __init__(self):
         self.player = self.enemy = None
@@ -127,18 +130,24 @@ class SmartBot(NaiveBot):
             return defs[0][0]
         return None
 
-    def choose_reward(self, options, can_upgrade=False):
-        """Fica com uma carta boa; se não houver nenhuma, faz REFACTOR."""
+    def choose_reward(self, options, can_upgrade=False, mutation=None):
+        """Carta boa > mutação boa > REFACTOR > qualquer carta da lista."""
         nomes = {c.name: c for c in options}
         for nome in self.REWARD_ORDER[:7]:
             if nome in nomes:
                 return nomes[nome]
+        if mutation is not None and mutation.name in self.GOOD_MUTATIONS:
+            return MUTATE_OPTION
         if can_upgrade:
             return REFACTOR_OPTION
         for nome in self.REWARD_ORDER:
             if nome in nomes:
                 return nomes[nome]
         return options[0]
+
+    def choose_mutation_target(self, mutation, pairs):
+        """Põe a mutação na melhor carta (a primeira da lista UPGRADE_ORDER)."""
+        return self.choose_upgrade(pairs)
 
     def choose_upgrade(self, pairs):
         nomes = [antes.name for antes, _ in pairs]

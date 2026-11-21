@@ -53,6 +53,65 @@ class TestRelics(unittest.TestCase):
             p.notify_card_played(None)
         self.assertEqual(p.energy, antes + 3)
 
+    def test_defrag_draws_only_with_a_nearly_empty_hand(self):
+        p = player_with("Defrag")
+        p.start_combat()
+        p.start_turn(first_turn=False)
+        self.assertEqual(len(p.deck.hand), config.INITIAL_HAND)          # mão cheia: nada
+        for _ in range(4):
+            p.deck.discard_from_hand(0)
+        p.start_turn(first_turn=False)
+        self.assertEqual(len(p.deck.hand), 1 + 2)
+
+    def test_watchdog_heals_only_below_half(self):
+        p = player_with("Watchdog")
+        p.take_damage(10)
+        p.start_turn(first_turn=True)
+        self.assertEqual(p.hp, p.max_hp - 10)
+        p.take_damage(25)
+        hp = p.hp
+        p.start_turn(first_turn=False)
+        self.assertEqual(p.hp, hp + 3)
+
+    def test_honeypot_hurts_the_attacker_even_through_block(self):
+        p, e = player_with("Honeypot"), Bug(5)
+        p.gain_block(50)
+        hp = e.hp
+        p.receive_attack(5, e)
+        self.assertEqual(e.hp, hp - 2)
+
+    def test_honeypot_does_not_trigger_on_parry(self):
+        p, e = player_with("Honeypot"), Bug(5)
+        p.set_parry(8)
+        hp = e.hp
+        p.receive_attack(5, e)
+        self.assertEqual(e.hp, hp - 8)                  # só o parry, sem os 2 do Honeypot
+
+    def test_stack_canary_saves_once_per_combat(self):
+        p, e = player_with("Stack Canary"), Bug(5)
+        p.start_combat()
+        p.take_damage(p.hp - 3)
+        p.receive_attack(50, e)
+        self.assertEqual((p.hp, p.is_alive), (1, True))
+        p.receive_attack(50, e)
+        self.assertFalse(p.is_alive)
+        p2 = player_with("Stack Canary")
+        for _ in range(2):                               # volta a funcionar no combate seguinte
+            p2.start_combat()
+            p2.restore_hp(p2.max_hp)
+            p2.take_damage(p2.hp - 1)
+            p2.receive_attack(50, e)
+            self.assertTrue(p2.is_alive)
+
+    def test_safe_mode_trades_energy_for_block(self):
+        p = player_with("Modo Seguro")
+        p.start_combat()
+        p.start_turn(first_turn=True)
+        self.assertEqual((p.block, p.energy), (6, config.INITIAL_ENERGY - 1))
+        p.spend_energy(p.energy)
+        p.start_turn(first_turn=False)
+        self.assertEqual(p.energy, config.ENERGY_PER_TURN - 1)
+
     def test_catalog_is_built_from_subclasses(self):
         from relics import Relic
         self.assertEqual(len(RELIC_FACTORIES), len(Relic.__subclasses__()))

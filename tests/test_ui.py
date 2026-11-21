@@ -6,7 +6,8 @@ import unittest
 from importlib.util import find_spec
 from unittest import mock
 
-from cards import REFACTOR_OPTION, make_card
+from cards import MUTATE_OPTION, REFACTOR_OPTION, make_card
+from mutations import make_mutation
 from characters import Player
 from deck import Deck
 from enemies import Boss, Virus
@@ -17,6 +18,7 @@ from relics import make_relic
 from savegame import SaveGame
 from simulate import NaiveBot
 from ui import GameUI, QuitGame, RunUI, TextUI
+from rng import rng
 
 HAS_RICH = find_spec("rich") is not None
 if HAS_RICH:
@@ -74,6 +76,29 @@ class TestTextUIValidation(unittest.TestCase):
             self.assertEqual(ui.choose_reward(opcoes, can_upgrade=True), REFACTOR_OPTION)
             self.assertIsNone(ui.choose_reward(opcoes, can_upgrade=True))
             self.assertIs(ui.choose_reward(opcoes), opcoes[0])
+
+    def test_reward_menu_numbers_with_mutation(self):
+        opcoes = [make_card("Firewall"), make_card("Segfault"), make_card("Sudo")]
+        self.assertEqual(TextUI._reward_numbers(opcoes, True, make_mutation("Blindado")), (4, 5))
+        self.assertEqual(TextUI._reward_numbers(opcoes, False, make_mutation("Blindado")), (None, 4))
+        self.assertEqual(TextUI._reward_numbers(opcoes, True, None), (4, None))
+        mut = make_mutation("Blindado")
+        a, b = self._answers("5", "4", "0", "4", "1")
+        with a, b:
+            ui = TextUI()
+            self.assertEqual(ui.choose_reward(opcoes, True, mut), MUTATE_OPTION)
+            self.assertEqual(ui.choose_reward(opcoes, True, mut), REFACTOR_OPTION)
+            self.assertIsNone(ui.choose_reward(opcoes, True, mut))
+            self.assertEqual(ui.choose_reward(opcoes, False, mut), MUTATE_OPTION)
+            self.assertIs(ui.choose_reward(opcoes, False, mut), opcoes[0])
+
+    def test_mutation_target_back_and_pick(self):
+        pares = [(make_card("Segfault"), make_card("Segfault|Blindado"))] * 2
+        a, b = self._answers("0", "2")
+        with a, b:
+            ui = TextUI()
+            self.assertIsNone(ui.choose_mutation_target(make_mutation("Blindado"), pares))
+            self.assertEqual(ui.choose_mutation_target(make_mutation("Blindado"), pares), 1)
 
     def test_end_turn_returns_none(self):
         p = new_player()
@@ -135,11 +160,15 @@ class TestRichUI(unittest.TestCase):
         self.ui._show_reward([make_card("Firewall")], True)
         self.ui._show_upgrades([(make_card("Segfault"), make_card("Segfault+"))])
         self.ui._show_relics([make_relic("Overvolt"), make_relic("Macro")])
+        mut = make_mutation("Vampírico")
+        self.ui._show_reward([make_card("Firewall")], True, mut)
+        self.ui._show_mutation_target(mut, [(make_card("Segfault"), make_card("Segfault|Vampírico"))])
         self.ui.show_help()
         self.ui.show_hall([("Normal", [ScoreEntry("Ana", 9, 10, True, "normal")]),
                            ("Rápido", [])], warning="teste")
         for esperado in ("Turno 1", "Mão", "Recompensa", "REFACTOR", "relíquia",
-                         "Ana", "Ainda não há recordes", "Como jogar"):
+                         "Ana", "Ainda não há recordes", "Como jogar", "MUTAÇÃO",
+                         "Segfault (Vampírico)"):
             self.assertIn(esperado, self.text())
 
     def test_boss_intent_stays_hidden(self):
@@ -163,6 +192,7 @@ class TestFullRunsThroughEveryScreen(unittest.TestCase):
 
     def _play(self, ui):
         random.seed(5)
+        rng.seed(5)
         for key in MODES:
             Game(ui=ui, hall=HallOfFame(None), save=SaveGame(None)).play_new(MODES[key])
 

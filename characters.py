@@ -262,7 +262,10 @@ class Player(Character):
             self._parry = 0
             attacker.take_damage(reflected)
             return HitResult(self._name, parried=True, reflected=reflected)
-        return self.take_damage(amount)
+        resultado = self.take_damage(amount)
+        for relic in self._relics:               # ex.: Honeypot, Stack Canary
+            relic.on_damage_taken(self, attacker, resultado)
+        return resultado
 
     def status_text(self):
         partes = [super().status_text()]

@@ -40,5 +40,12 @@
     "rooms": 5,
     "won": true,
     "mode": "curto"
+  },
+  {
+    "name": "Dino",
+    "score": 362,
+    "rooms": 4,
+    "won": false,
+    "mode": "curto"
   }
 ]

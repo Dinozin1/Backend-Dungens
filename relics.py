@@ -8,9 +8,8 @@ ganchos de todas as relíquias sem saber quais são (polimorfismo).
 Para criar uma relíquia nova basta escrever a classe: o catálogo
 (RELIC_FACTORIES) é construído sozinho a partir das subclasses de Relic.
 """
-import random
-
 from cards import DefenseCard
+from rng import rng
 
 
 class Relic:
@@ -37,6 +36,9 @@ class Relic:
 
     def on_card_played(self, player, card):
         """Chamado depois de o jogador jogar uma carta."""
+
+    def on_damage_taken(self, player, attacker, result):
+        """Chamado depois de o jogador levar um ataque (que não foi anulado por parry)."""
 
     def attack_bonus(self):
         """Dano extra em cada golpe do jogador."""
@@ -125,6 +127,49 @@ class AutoSave(Relic):
         player.heal(2)
 
 
+class Defrag(Relic):
+    NAME = "Defrag"
+    DESCRIPTION = "No início do turno, se tens 2 cartas ou menos na mão, compras 2"
+
+    def on_turn_start(self, player):
+        if len(player.deck.hand) <= 2:
+            player.deck.draw(2)
+
+
+class Watchdog(Relic):
+    NAME = "Watchdog"
+    DESCRIPTION = "No início do turno, se tens menos de metade da vida, recuperas 3"
+
+    def on_turn_start(self, player):
+        if player.hp * 2 < player.max_hp:
+            player.heal(3)
+
+
+class Honeypot(Relic):
+    NAME = "Honeypot"
+    DESCRIPTION = "Cada ataque que levas custa 2 de vida (direta) a quem te atacou"
+
+    def on_damage_taken(self, player, attacker, result):
+        attacker.take_damage(2, ignore_block=True)
+
+
+class StackCanary(Relic):
+    """Tem estado próprio: só salva uma vez por combate."""
+    NAME = "Stack Canary"
+    DESCRIPTION = "Uma vez por combate, se fosses morrer ficas com 1 de vida"
+
+    def __init__(self):
+        self._used = False
+
+    def on_combat_start(self, player):
+        self._used = False
+
+    def on_damage_taken(self, player, attacker, result):
+        if not player.is_alive and not self._used:
+            self._used = True
+            player.restore_hp(1)
+
+
 # --- Relíquias de RISCO (poder grande, com preço) ---
 class Overvolt(Relic):
     NAME = "Overvolt"
@@ -135,6 +180,15 @@ class Overvolt(Relic):
 
     def on_turn_start(self, player):
         player.gain_energy(2)
+
+
+class SafeMode(Relic):
+    NAME = "Modo Seguro"
+    DESCRIPTION = "RISCO: +6 de bloqueio no início de cada turno, mas -1 energia por turno"
+
+    def on_turn_start(self, player):
+        player.gain_block(6)
+        player.spend_energy(min(1, player.energy))
 
 
 class LegacyCode(Relic):
@@ -160,4 +214,4 @@ def make_relic(name):
 def random_relics(owned_names, amount=2):
     """Relíquias que ainda não tens, para escolheres uma."""
     livres = [n for n in RELIC_FACTORIES if n not in owned_names]
-    return [make_relic(n) for n in random.sample(livres, min(amount, len(livres)))]
+    return [make_relic(n) for n in rng.sample(livres, min(amount, len(livres)))]

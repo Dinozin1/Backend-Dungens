@@ -89,13 +89,18 @@ class Battle:
                 continue
             carta = hand[index]
             if not self._player.can_afford(carta.cost):
-                self._ui.message(f"Energia insuficiente para {carta.name} "
+                self._ui.message(f"Energia insuficiente para {carta.display_name} "
                                  f"(custa {carta.cost}, tens {self._player.energy}).")
                 continue
             self._player.spend_energy(carta.cost)
-            self._player.deck.discard_from_hand(index)
+            if carta.exhausts:                        # mutação Efémero
+                self._player.deck.exile_from_hand(index)
+            else:
+                self._player.deck.discard_from_hand(index)
             # Polimorfismo: não sabemos que tipo de carta é, só chamamos play().
-            self._ui.message(f"-> {carta.name}: {carta.play(self._player, self._enemy)}")
+            self._ui.message(f"-> {carta.display_name}: {carta.play(self._player, self._enemy)}")
+            if carta.exhausts:
+                self._ui.message(f"   ({carta.name} foi exilada até ao fim do combate.)")
             self._player.notify_card_played(carta)   # as relíquias reagem
             # o estado do inimigo pode ter mudado (ex.: Fraqueza): atualiza a intenção
             self._enemy.plan(self._turns)
@@ -122,4 +127,4 @@ class Battle:
             if not 0 <= index < len(hand):
                 continue
             carta = self._player.deck.discard_from_hand(index)
-            self._ui.message(f"Descartaste {carta.name}.")
+            self._ui.message(f"Descartaste {carta.display_name}.")

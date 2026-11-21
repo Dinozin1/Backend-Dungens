@@ -12,6 +12,7 @@ from enemies import Bug
 from game import Game
 from hall_of_fame import HallOfFame
 from modes import MODES
+from rng import rng
 from savegame import SaveGame
 from simulate import NaiveBot, SmartBot
 from ui import QuitGame
@@ -94,6 +95,7 @@ class TestBattleRules(unittest.TestCase):
 class TestRuns(unittest.TestCase):
     def setUp(self):
         random.seed(11)
+        rng.seed(11)
 
     def _run(self, mode_key):
         hall = HallOfFame(None)

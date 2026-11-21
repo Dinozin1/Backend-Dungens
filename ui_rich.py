@@ -35,13 +35,16 @@ RISKY = (RecoilAttackCard, EnergyCard)
 
 # O que o inimigo vai fazer -> cor da intenção.
 INTENT_STYLES = {"attack": "bold red", "defend": "cyan", "weaken": "magenta",
-                 "expose": "magenta", "heal": "green"}
+                 "expose": "magenta", "heal": "green", "poison": "bold green",
+                 "drain": "bright_yellow", "spam": "bright_black"}
 
 # Mensagens do jogo -> estilo (a primeira regra que coincidir ganha).
 MESSAGE_STYLES = (
     ("VITÓRIA", "bold green"), ("FIM DA RUN", "bold red"),
     ("vida chegou a 0", "bold red"), ("foi derrotado", "bold green"),
     (">>>", "bold cyan"), ("PARRY", "bold yellow"), ("REFACTOR", "bold magenta"),
+    ("MUTAÇÃO", "bold bright_magenta"), ("Combate retomado", "dim"),
+    ("exilada", "dim"), ("rouba-te", "bright_yellow"), ("envenena-te", "bold green"),
     ("Relíquia obtida", "bright_blue"), ("inválid", "yellow"), ("não é permitido", "yellow"),
     ("ataca!", "red"), ("->", "yellow"), ("Recuperas", "green"), ("cura-se", "green"),
     ("veneno", "green"),
@@ -96,7 +99,9 @@ class RichUI(TextUI):
             tipo, cor = card_kind(carta)
             pagavel = player is None or player.can_afford(carta.cost)
             estilo = None if pagavel else "dim"
-            tabela.add_row(Text(str(i)), Text(carta.name, style=f"bold {cor}"),
+            mutada = carta.mutation is not None
+            tabela.add_row(Text(str(i)),
+                           Text(carta.display_name, style=f"bold {cor}" + (" italic" if mutada else "")),
                            Text(tipo, style=cor), Text(str(carta.cost), style="yellow"),
                            Text(carta.description), style=estilo)
         self._console.print(tabela)
@@ -182,14 +187,32 @@ class RichUI(TextUI):
         self.message(f"\nA mão passou de {config.HAND_LIMIT} cartas! Descarta uma:")
         self._cards_table("Descartar", hand)
 
-    def _show_reward(self, options, can_upgrade):
+    def _show_reward(self, options, can_upgrade, mutation=None):
         self._console.print(Text("\nRecompensa! Escolhe uma carta para o baralho:",
                                  style="bold green"))
         self._cards_table("Recompensa", options)
-        if can_upgrade:
-            self._option(len(options) + 1, "REFACTOR: melhora uma carta do teu baralho",
+        refactor, mutar = self._reward_numbers(options, can_upgrade, mutation)
+        if refactor:
+            self._option(refactor, "REFACTOR: melhora uma carta do teu baralho",
                          "bold magenta")
+        if mutar:
+            self._option(mutar, f"MUTAÇÃO ({mutation}) numa carta do teu baralho",
+                         "bold bright_magenta")
         self._option(0, "Nenhuma (mantém o baralho pequeno)", "dim")
+
+    def _show_mutation_target(self, mutation, pairs):
+        tabela = Table(title=f"MUTAÇÃO - {mutation}", box=box.ROUNDED)
+        for coluna in ("#", "Agora", "Depois"):
+            tabela.add_column(coluna)
+        for i, (antes, depois) in enumerate(pairs, 1):
+            _, cor = card_kind(antes)
+            tabela.add_row(Text(str(i)),
+                           Text(f"{antes.name} [custo {antes.cost}] - {antes.description}",
+                                style=cor),
+                           Text(f"{depois.display_name} [custo {depois.cost}] - "
+                                f"{depois.description}", style=f"bold {cor}"))
+        self._console.print(tabela)
+        self._option(0, "Voltar atrás", "dim")
 
     def _show_upgrades(self, pairs):
         tabela = Table(title="REFACTOR - que carta queres melhorar?", box=box.ROUNDED)
@@ -198,8 +221,8 @@ class RichUI(TextUI):
         for i, (antes, depois) in enumerate(pairs, 1):
             _, cor = card_kind(antes)
             tabela.add_row(Text(str(i)),
-                           Text(f"{antes.name} - {antes.description}", style=cor),
-                           Text(f"{depois.name} - {depois.description}",
+                           Text(f"{antes.display_name} - {antes.description}", style=cor),
+                           Text(f"{depois.display_name} - {depois.description}",
                                 style=f"bold {cor}"))
         self._console.print(tabela)
         self._option(0, "Voltar atrás", "dim")
